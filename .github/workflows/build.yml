@@ -8,19 +8,25 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      - name: Download source
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install .NET
+      - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
 
-      - name: Build EXE
-        run: dotnet publish VideoPlayer.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+      - name: Restore
+        run: dotnet restore VideoPlayer.csproj
 
-      - name: Upload EXE
+      - name: Publish
+        run: dotnet publish VideoPlayer.csproj -c Release -r win-x64 --self-contained true -o publish
+
+      - name: Create ZIP
+        run: Compress-Archive -Path publish\* -DestinationPath VideoPlayer-Windows.zip
+
+      - name: Upload ZIP
         uses: actions/upload-artifact@v4
         with:
           name: VideoPlayer-Windows
-          path: publish/
+          path: VideoPlayer-Windows.zip

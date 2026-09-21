@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using LibVLCSharp.Shared;
 using LibVLCSharp.WinForms;
@@ -11,7 +12,9 @@ namespace VideoPlayer
     public class VideoItem
     {
         public string FilePath { get; set; } = "";
+
         public int IntroStart { get; set; } = 0;
+
         public int IntroEnd { get; set; } = 0;
 
         public string Title
@@ -31,132 +34,198 @@ namespace VideoPlayer
             Core.Initialize();
 
             ApplicationConfiguration.Initialize();
+
             Application.Run(new MainForm());
         }
     }
 
     public class MainForm : Form
     {
-        // ---------------------------------------------------------
-        // LIBVLC
-        // ---------------------------------------------------------
+        // =========================================================
+        // WINDOWS CURSOR
+        // =========================================================
+
+        [DllImport("user32.dll")]
+        private static extern int ShowCursor(bool bShow);
+
+        private bool _cursorHidden = false;
+
+        // =========================================================
+        // VLC
+        // =========================================================
 
         private LibVLC _libVLC = null!;
+
         private MediaPlayer _mediaPlayer = null!;
+
         private VideoView _videoView = null!;
 
         private Media? _currentMedia;
 
-        // ---------------------------------------------------------
-        // VIDEO
-        // ---------------------------------------------------------
+        // =========================================================
+        // VIDEOS
+        // =========================================================
 
-        private readonly List<VideoItem> _videos = new();
+        private readonly List<VideoItem> _videos =
+            new List<VideoItem>();
 
         private int _currentIndex = -1;
 
-        // ---------------------------------------------------------
-        // UI
-        // ---------------------------------------------------------
+        // =========================================================
+        // MAIN UI
+        // =========================================================
 
         private Panel _videoContainer = null!;
+
         private Panel _topBar = null!;
+
         private Panel _bottomBar = null!;
+
         private Panel _sideBar = null!;
-
-        private Label _titleLabel = null!;
-
-        private Button _playPauseButton = null!;
-        private Button _previousButton = null!;
-        private Button _nextButton = null!;
-        private Button _muteButton = null!;
-        private Button _fullscreenButton = null!;
-
-        private TrackBar _progressBar = null!;
-        private TrackBar _volumeBar = null!;
-
-        private Label _currentTimeLabel = null!;
-        private Label _durationLabel = null!;
-
-        private Button _skipIntroButton = null!;
-
-        private Panel _nextEpisodePanel = null!;
-        private Label _nextEpisodeTitle = null!;
-        private Label _nextEpisodeCountdown = null!;
-        private Button _watchNowButton = null!;
 
         private FlowLayoutPanel _videoList = null!;
 
+        // =========================================================
+        // TOP
+        // =========================================================
+
+        private Label _titleLabel = null!;
+
+        private Label _liveLabel = null!;
+
+        // =========================================================
+        // PLAYER CONTROLS
+        // =========================================================
+
+        private Button _previousButton = null!;
+
+        private Button _playPauseButton = null!;
+
+        private Button _nextButton = null!;
+
+        private Button _muteButton = null!;
+
+        private Button _fullscreenButton = null!;
+
+        private TrackBar _progressBar = null!;
+
+        private TrackBar _volumeBar = null!;
+
+        private Label _currentTimeLabel = null!;
+
+        private Label _durationLabel = null!;
+
+        // =========================================================
+        // INTRO
+        // =========================================================
+
+        private Button _skipIntroButton = null!;
+
+        // =========================================================
+        // NEXT EPISODE
+        // =========================================================
+
+        private Panel _nextEpisodePanel = null!;
+
+        private Label _nextEpisodeTitle = null!;
+
+        private Label _nextEpisodeCountdown = null!;
+
+        private Button _watchNowButton = null!;
+
+        // =========================================================
+        // SIDE BUTTONS
+        // =========================================================
+
         private Button _addButton = null!;
+
         private Button _deleteButton = null!;
+
         private Button _upButton = null!;
+
         private Button _downButton = null!;
 
-        // ---------------------------------------------------------
+        // =========================================================
         // TIMERS
-        // ---------------------------------------------------------
+        // =========================================================
 
         private System.Windows.Forms.Timer _updateTimer = null!;
+
         private System.Windows.Forms.Timer _mouseTimer = null!;
 
         private int _mouseIdleSeconds = 0;
 
-        // ---------------------------------------------------------
+        // =========================================================
         // FULLSCREEN
-        // ---------------------------------------------------------
+        // =========================================================
 
-        private bool _isFullscreen = true;
+        private bool _isFullscreen = false;
 
         private FormBorderStyle _oldBorderStyle;
+
         private FormWindowState _oldWindowState;
+
         private Rectangle _oldBounds;
 
-        // ---------------------------------------------------------
+        // =========================================================
         // COLORS
-        // ---------------------------------------------------------
+        // =========================================================
 
         private readonly Color BackgroundColor =
-            Color.FromArgb(10, 10, 12);
+            Color.FromArgb(8, 8, 10);
 
         private readonly Color PanelColor =
-            Color.FromArgb(20, 20, 24);
+            Color.FromArgb(18, 18, 22);
+
+        private readonly Color CardColor =
+            Color.FromArgb(28, 28, 34);
 
         private readonly Color ButtonColor =
-            Color.FromArgb(31, 31, 37);
+            Color.FromArgb(35, 35, 42);
 
         private readonly Color ButtonHoverColor =
-            Color.FromArgb(45, 45, 52);
+            Color.FromArgb(52, 52, 60);
 
         private readonly Color AccentColor =
-            Color.FromArgb(220, 35, 45);
+            Color.FromArgb(220, 30, 42);
 
         private readonly Color TextColor =
             Color.White;
 
         private readonly Color SecondaryTextColor =
-            Color.FromArgb(170, 170, 175);
+            Color.FromArgb(165, 165, 172);
 
-        // ---------------------------------------------------------
+        // =========================================================
         // CONSTRUCTOR
-        // ---------------------------------------------------------
+        // =========================================================
 
         public MainForm()
         {
             Text = "OLCAY KILIÇ TV";
 
             BackColor = BackgroundColor;
+
             ForeColor = TextColor;
 
-            MinimumSize = new Size(1000, 600);
+            MinimumSize =
+                new Size(1000, 600);
 
             KeyPreview = true;
 
+            StartPosition =
+                FormStartPosition.CenterScreen;
+
             InitializeVLC();
+
             InitializeUI();
+
             InitializeTimers();
 
             KeyDown += MainForm_KeyDown;
+
             MouseMove += MainForm_MouseMove;
+
+            Resize += MainForm_Resize;
 
             StartFullscreen();
         }
@@ -167,16 +236,22 @@ namespace VideoPlayer
 
         private void InitializeVLC()
         {
-            _libVLC = new LibVLC(
-                "--no-video-title-show",
-                "--no-osd"
-            );
+            _libVLC =
+                new LibVLC(
+                    "--no-video-title-show",
+                    "--no-osd");
 
-            _mediaPlayer = new MediaPlayer(_libVLC);
+            _mediaPlayer =
+                new MediaPlayer(_libVLC);
 
-            _mediaPlayer.EndReached += MediaPlayer_EndReached;
-            _mediaPlayer.Playing += MediaPlayer_Playing;
-            _mediaPlayer.Paused += MediaPlayer_Paused;
+            _mediaPlayer.EndReached +=
+                MediaPlayer_EndReached;
+
+            _mediaPlayer.Playing +=
+                MediaPlayer_Playing;
+
+            _mediaPlayer.Paused +=
+                MediaPlayer_Paused;
         }
 
         // =========================================================
@@ -186,67 +261,71 @@ namespace VideoPlayer
         private void InitializeUI()
         {
             // -----------------------------------------------------
-            // VIDEO CONTAINER
+            // VIDEO AREA
             // -----------------------------------------------------
 
-            _videoContainer = new Panel();
+            _videoContainer =
+                new Panel();
 
-            _videoContainer.Dock = DockStyle.Fill;
-            _videoContainer.BackColor = Color.Black;
+            _videoContainer.Dock =
+                DockStyle.Fill;
 
-            Controls.Add(_videoContainer);
+            _videoContainer.BackColor =
+                Color.Black;
+
+            Controls.Add(
+                _videoContainer);
 
             // -----------------------------------------------------
             // VIDEO
             // -----------------------------------------------------
 
-            _videoView = new VideoView();
+            _videoView =
+                new VideoView();
 
-            _videoView.Dock = DockStyle.Fill;
-            _videoView.MediaPlayer = _mediaPlayer;
-            _videoView.BackColor = Color.Black;
+            _videoView.Dock =
+                DockStyle.Fill;
 
-            _videoContainer.Controls.Add(_videoView);
+            _videoView.BackColor =
+                Color.Black;
+
+            _videoView.MediaPlayer =
+                _mediaPlayer;
+
+            _videoContainer.Controls.Add(
+                _videoView);
 
             // -----------------------------------------------------
-            // TOP BAR
+            // TOP
             // -----------------------------------------------------
 
             CreateTopBar();
 
             // -----------------------------------------------------
-            // BOTTOM BAR
+            // BOTTOM
             // -----------------------------------------------------
 
             CreateBottomBar();
 
             // -----------------------------------------------------
-            // SIDE BAR
+            // SIDEBAR
             // -----------------------------------------------------
 
             CreateSideBar();
 
             // -----------------------------------------------------
-            // INTRO SKIP
+            // INTRO
             // -----------------------------------------------------
 
             CreateSkipIntroButton();
 
             // -----------------------------------------------------
-            // NEXT EPISODE
+            // NEXT
             // -----------------------------------------------------
 
             CreateNextEpisodePanel();
 
-            // -----------------------------------------------------
-            // Z ORDER
-            // -----------------------------------------------------
-
-            _topBar.BringToFront();
-            _bottomBar.BringToFront();
-            _sideBar.BringToFront();
-            _skipIntroButton.BringToFront();
-            _nextEpisodePanel.BringToFront();
+            BringAllOverlaysToFront();
         }
 
         // =========================================================
@@ -255,43 +334,74 @@ namespace VideoPlayer
 
         private void CreateTopBar()
         {
-            _topBar = new Panel();
+            _topBar =
+                new Panel();
 
-            _topBar.Dock = DockStyle.Top;
-            _topBar.Height = 70;
-            _topBar.BackColor = Color.FromArgb(235, 10, 10, 12);
+            _topBar.Height =
+                70;
 
-            _videoContainer.Controls.Add(_topBar);
+            _topBar.Dock =
+                DockStyle.Top;
 
-            _titleLabel = new Label();
+            _topBar.BackColor =
+                Color.FromArgb(
+                    235,
+                    8,
+                    8,
+                    10);
 
-            _titleLabel.Text = "OLCAY KILIÇ TV";
-            _titleLabel.ForeColor = Color.White;
-            _titleLabel.Font = new Font(
-                "Segoe UI",
-                15,
-                FontStyle.Bold
-            );
+            _videoContainer.Controls.Add(
+                _topBar);
 
-            _titleLabel.AutoSize = true;
-            _titleLabel.Location = new Point(25, 21);
+            _titleLabel =
+                new Label();
 
-            _topBar.Controls.Add(_titleLabel);
+            _titleLabel.Text =
+                "OLCAY KILIÇ TV";
 
-            Label liveLabel = new Label();
+            _titleLabel.ForeColor =
+                Color.White;
 
-            liveLabel.Text = "● OYNATILIYOR";
-            liveLabel.ForeColor = AccentColor;
-            liveLabel.Font = new Font(
-                "Segoe UI",
-                9,
-                FontStyle.Bold
-            );
+            _titleLabel.Font =
+                new Font(
+                    "Segoe UI",
+                    16,
+                    FontStyle.Bold);
 
-            liveLabel.AutoSize = true;
-            liveLabel.Location = new Point(220, 25);
+            _titleLabel.AutoSize =
+                true;
 
-            _topBar.Controls.Add(liveLabel);
+            _titleLabel.Location =
+                new Point(25, 20);
+
+            _topBar.Controls.Add(
+                _titleLabel);
+
+            _liveLabel =
+                new Label();
+
+            _liveLabel.Text =
+                "● OYNATILIYOR";
+
+            _liveLabel.ForeColor =
+                AccentColor;
+
+            _liveLabel.Font =
+                new Font(
+                    "Segoe UI",
+                    9,
+                    FontStyle.Bold);
+
+            _liveLabel.AutoSize =
+                true;
+
+            _liveLabel.Location =
+                new Point(
+                    220,
+                    25);
+
+            _topBar.Controls.Add(
+                _liveLabel);
         }
 
         // =========================================================
@@ -300,83 +410,150 @@ namespace VideoPlayer
 
         private void CreateBottomBar()
         {
-            _bottomBar = new Panel();
+            _bottomBar =
+                new Panel();
 
-            _bottomBar.Dock = DockStyle.Bottom;
-            _bottomBar.Height = 105;
-            _bottomBar.BackColor = Color.FromArgb(245, 8, 8, 10);
+            _bottomBar.Height =
+                110;
 
-            _videoContainer.Controls.Add(_bottomBar);
+            _bottomBar.Dock =
+                DockStyle.Bottom;
+
+            _bottomBar.BackColor =
+                Color.FromArgb(
+                    245,
+                    8,
+                    8,
+                    10);
+
+            _videoContainer.Controls.Add(
+                _bottomBar);
 
             // -----------------------------------------------------
             // PROGRESS
             // -----------------------------------------------------
 
-            _progressBar = new TrackBar();
+            _progressBar =
+                new TrackBar();
 
-            _progressBar.Minimum = 0;
-            _progressBar.Maximum = 1000;
-            _progressBar.Value = 0;
+            _progressBar.Minimum =
+                0;
 
-            _progressBar.TickStyle = TickStyle.None;
+            _progressBar.Maximum =
+                1000;
 
-            _progressBar.Height = 25;
+            _progressBar.Value =
+                0;
 
-            _progressBar.Dock = DockStyle.Top;
+            _progressBar.TickStyle =
+                TickStyle.None;
 
-            _progressBar.Margin = new Padding(15, 0, 15, 0);
+            _progressBar.Dock =
+                DockStyle.Top;
 
-            _progressBar.Scroll += ProgressBar_Scroll;
+            _progressBar.Height =
+                30;
 
-            _bottomBar.Controls.Add(_progressBar);
+            _progressBar.Margin =
+                new Padding(15);
+
+            _progressBar.Scroll +=
+                ProgressBar_Scroll;
+
+            _bottomBar.Controls.Add(
+                _progressBar);
 
             // -----------------------------------------------------
             // CURRENT TIME
             // -----------------------------------------------------
 
-            _currentTimeLabel = new Label();
+            _currentTimeLabel =
+                new Label();
 
-            _currentTimeLabel.Text = "00:00";
+            _currentTimeLabel.Text =
+                "00:00";
 
-            _currentTimeLabel.ForeColor = Color.White;
+            _currentTimeLabel.ForeColor =
+                Color.White;
 
             _currentTimeLabel.Font =
-                new Font("Segoe UI", 9);
+                new Font(
+                    "Segoe UI",
+                    9,
+                    FontStyle.Bold);
 
-            _currentTimeLabel.AutoSize = true;
+            _currentTimeLabel.AutoSize =
+                true;
 
             _currentTimeLabel.Location =
-                new Point(18, 30);
+                new Point(
+                    20,
+                    32);
 
-            _bottomBar.Controls.Add(_currentTimeLabel);
+            _bottomBar.Controls.Add(
+                _currentTimeLabel);
+
+            // -----------------------------------------------------
+            // SLASH
+            // -----------------------------------------------------
+
+            Label slash =
+                new Label();
+
+            slash.Text =
+                "/";
+
+            slash.ForeColor =
+                SecondaryTextColor;
+
+            slash.AutoSize =
+                true;
+
+            slash.Location =
+                new Point(
+                    68,
+                    32);
+
+            _bottomBar.Controls.Add(
+                slash);
 
             // -----------------------------------------------------
             // DURATION
             // -----------------------------------------------------
 
-            _durationLabel = new Label();
+            _durationLabel =
+                new Label();
 
-            _durationLabel.Text = "00:00";
+            _durationLabel.Text =
+                "00:00";
 
             _durationLabel.ForeColor =
-                Color.FromArgb(180, 180, 185);
+                SecondaryTextColor;
 
             _durationLabel.Font =
-                new Font("Segoe UI", 9);
+                new Font(
+                    "Segoe UI",
+                    9);
 
-            _durationLabel.AutoSize = true;
+            _durationLabel.AutoSize =
+                true;
 
             _durationLabel.Location =
-                new Point(70, 30);
+                new Point(
+                    82,
+                    32);
 
-            _bottomBar.Controls.Add(_durationLabel);
+            _bottomBar.Controls.Add(
+                _durationLabel);
 
             // -----------------------------------------------------
             // PREVIOUS
             // -----------------------------------------------------
 
             _previousButton =
-                CreatePlayerButton("⏮", 125);
+                CreatePlayerButton(
+                    "⏮",
+                    135);
 
             _previousButton.Click +=
                 delegate
@@ -389,10 +566,14 @@ namespace VideoPlayer
             // -----------------------------------------------------
 
             _playPauseButton =
-                CreatePlayerButton("▶", 175);
+                CreatePlayerButton(
+                    "▶",
+                    190);
 
-            _playPauseButton.Width = 55;
-            _playPauseButton.Height = 38;
+            _playPauseButton.Size =
+                new Size(
+                    55,
+                    40);
 
             _playPauseButton.Click +=
                 delegate
@@ -405,7 +586,9 @@ namespace VideoPlayer
             // -----------------------------------------------------
 
             _nextButton =
-                CreatePlayerButton("⏭", 240);
+                CreatePlayerButton(
+                    "⏭",
+                    255);
 
             _nextButton.Click +=
                 delegate
@@ -414,11 +597,13 @@ namespace VideoPlayer
                 };
 
             // -----------------------------------------------------
-            // VOLUME
+            // MUTE
             // -----------------------------------------------------
 
             _muteButton =
-                CreatePlayerButton("🔊", 300);
+                CreatePlayerButton(
+                    "🔊",
+                    315);
 
             _muteButton.Click +=
                 delegate
@@ -427,24 +612,33 @@ namespace VideoPlayer
                 };
 
             // -----------------------------------------------------
-            // VOLUME SLIDER
+            // VOLUME
             // -----------------------------------------------------
 
-            _volumeBar = new TrackBar();
+            _volumeBar =
+                new TrackBar();
 
-            _volumeBar.Minimum = 0;
-            _volumeBar.Maximum = 100;
+            _volumeBar.Minimum =
+                0;
 
-            _volumeBar.Value = 80;
+            _volumeBar.Maximum =
+                100;
+
+            _volumeBar.Value =
+                80;
 
             _volumeBar.TickStyle =
                 TickStyle.None;
 
-            _volumeBar.Width = 100;
-            _volumeBar.Height = 30;
+            _volumeBar.Size =
+                new Size(
+                    110,
+                    35);
 
             _volumeBar.Location =
-                new Point(350, 33);
+                new Point(
+                    365,
+                    31);
 
             _volumeBar.Scroll +=
                 delegate
@@ -453,16 +647,20 @@ namespace VideoPlayer
                         _volumeBar.Value;
                 };
 
-            _bottomBar.Controls.Add(_volumeBar);
+            _bottomBar.Controls.Add(
+                _volumeBar);
 
-            _mediaPlayer.Volume = 80;
+            _mediaPlayer.Volume =
+                80;
 
             // -----------------------------------------------------
             // FULLSCREEN
             // -----------------------------------------------------
 
             _fullscreenButton =
-                CreatePlayerButton("⛶", 470);
+                CreatePlayerButton(
+                    "⛶",
+                    490);
 
             _fullscreenButton.Anchor =
                 AnchorStyles.Right |
@@ -479,20 +677,27 @@ namespace VideoPlayer
             string text,
             int x)
         {
-            Button button = new Button();
+            Button button =
+                new Button();
 
-            button.Text = text;
+            button.Text =
+                text;
 
             button.Location =
-                new Point(x, 28);
+                new Point(
+                    x,
+                    30);
 
             button.Size =
-                new Size(45, 38);
+                new Size(
+                    48,
+                    40);
 
             button.FlatStyle =
                 FlatStyle.Flat;
 
-            button.FlatAppearance.BorderSize = 0;
+            button.FlatAppearance.BorderSize =
+                0;
 
             button.BackColor =
                 ButtonColor;
@@ -523,39 +728,51 @@ namespace VideoPlayer
                         ButtonColor;
                 };
 
-            _bottomBar.Controls.Add(button);
+            _bottomBar.Controls.Add(
+                button);
 
             return button;
         }
 
         // =========================================================
-        // SIDE BAR
+        // SIDEBAR
         // =========================================================
 
         private void CreateSideBar()
         {
-            _sideBar = new Panel();
+            _sideBar =
+                new Panel();
 
-            _sideBar.Name = "SideBar";
+            _sideBar.Name =
+                "SideBar";
 
-            _sideBar.Dock = DockStyle.Right;
+            _sideBar.Dock =
+                DockStyle.Right;
 
-            _sideBar.Width = 380;
+            _sideBar.Width =
+                380;
 
             _sideBar.BackColor =
-                Color.FromArgb(18, 18, 22);
+                Color.FromArgb(
+                    17,
+                    17,
+                    21);
 
-            Controls.Add(_sideBar);
+            Controls.Add(
+                _sideBar);
 
             // -----------------------------------------------------
             // HEADER
             // -----------------------------------------------------
 
-            Label header = new Label();
+            Label header =
+                new Label();
 
-            header.Text = "BÖLÜMLER";
+            header.Text =
+                "BÖLÜMLER";
 
-            header.ForeColor = Color.White;
+            header.ForeColor =
+                Color.White;
 
             header.Font =
                 new Font(
@@ -566,12 +783,113 @@ namespace VideoPlayer
             header.Dock =
                 DockStyle.Top;
 
-            header.Height = 55;
+            header.Height =
+                55;
 
             header.Padding =
-                new Padding(20, 15, 0, 0);
+                new Padding(
+                    20,
+                    15,
+                    0,
+                    0);
 
-            _sideBar.Controls.Add(header);
+            _sideBar.Controls.Add(
+                header);
+
+            // -----------------------------------------------------
+            // BUTTON AREA
+            // IMPORTANT: ADD FIRST SO FILL LIST DOES NOT COVER IT
+            // -----------------------------------------------------
+
+            Panel buttonPanel =
+                new Panel();
+
+            buttonPanel.Dock =
+                DockStyle.Bottom;
+
+            buttonPanel.Height =
+                125;
+
+            buttonPanel.BackColor =
+                Color.FromArgb(
+                    17,
+                    17,
+                    21);
+
+            _sideBar.Controls.Add(
+                buttonPanel);
+
+            // -----------------------------------------------------
+            // ADD
+            // -----------------------------------------------------
+
+            _addButton =
+                CreateSideButton(
+                    "+ VİDEO EKLE",
+                    10,
+                    10,
+                    350,
+                    35);
+
+            _addButton.Click +=
+                AddButton_Click;
+
+            buttonPanel.Controls.Add(
+                _addButton);
+
+            // -----------------------------------------------------
+            // DELETE
+            // -----------------------------------------------------
+
+            _deleteButton =
+                CreateSideButton(
+                    "SİL",
+                    10,
+                    55,
+                    100,
+                    35);
+
+            _deleteButton.Click +=
+                DeleteButton_Click;
+
+            buttonPanel.Controls.Add(
+                _deleteButton);
+
+            // -----------------------------------------------------
+            // UP
+            // -----------------------------------------------------
+
+            _upButton =
+                CreateSideButton(
+                    "▲",
+                    120,
+                    55,
+                    100,
+                    35);
+
+            _upButton.Click +=
+                UpButton_Click;
+
+            buttonPanel.Controls.Add(
+                _upButton);
+
+            // -----------------------------------------------------
+            // DOWN
+            // -----------------------------------------------------
+
+            _downButton =
+                CreateSideButton(
+                    "▼",
+                    230,
+                    55,
+                    100,
+                    35);
+
+            _downButton.Click +=
+                DownButton_Click;
+
+            buttonPanel.Controls.Add(
+                _downButton);
 
             // -----------------------------------------------------
             // VIDEO LIST
@@ -596,88 +914,19 @@ namespace VideoPlayer
                 true;
 
             _videoList.Padding =
-                new Padding(10);
+                new Padding(
+                    10);
 
             _videoList.BackColor =
-                Color.FromArgb(18, 18, 22);
+                Color.FromArgb(
+                    17,
+                    17,
+                    21);
 
             _sideBar.Controls.Add(
                 _videoList);
 
-            // -----------------------------------------------------
-            // BOTTOM BUTTONS
-            // -----------------------------------------------------
-
-            Panel buttons =
-                new Panel();
-
-            buttons.Dock =
-                DockStyle.Bottom;
-
-            buttons.Height = 125;
-
-            buttons.BackColor =
-                Color.FromArgb(18, 18, 22);
-
-            _sideBar.Controls.Add(buttons);
-
-            _addButton =
-                CreateSideButton(
-                    "+ VİDEO EKLE",
-                    10,
-                    10,
-                    350,
-                    35);
-
-            _addButton.Click +=
-                AddButton_Click;
-
-            buttons.Controls.Add(
-                _addButton);
-
-            _deleteButton =
-                CreateSideButton(
-                    "SİL",
-                    10,
-                    55,
-                    100,
-                    35);
-
-            _deleteButton.Click +=
-                DeleteButton_Click;
-
-            buttons.Controls.Add(
-                _deleteButton);
-
-            _upButton =
-                CreateSideButton(
-                    "▲",
-                    120,
-                    55,
-                    100,
-                    35);
-
-            _upButton.Click +=
-                UpButton_Click;
-
-            buttons.Controls.Add(
-                _upButton);
-
-            _downButton =
-                CreateSideButton(
-                    "▼",
-                    230,
-                    55,
-                    100,
-                    35);
-
-            _downButton.Click +=
-                DownButton_Click;
-
-            buttons.Controls.Add(
-                _downButton);
-
-            _sideBar.BringToFront();
+            RefreshVideoSlots();
         }
 
         private Button CreateSideButton(
@@ -690,13 +939,18 @@ namespace VideoPlayer
             Button button =
                 new Button();
 
-            button.Text = text;
+            button.Text =
+                text;
 
             button.Location =
-                new Point(x, y);
+                new Point(
+                    x,
+                    y);
 
             button.Size =
-                new Size(width, height);
+                new Size(
+                    width,
+                    height);
 
             button.FlatStyle =
                 FlatStyle.Flat;
@@ -719,6 +973,20 @@ namespace VideoPlayer
             button.Cursor =
                 Cursors.Hand;
 
+            button.MouseEnter +=
+                delegate
+                {
+                    button.BackColor =
+                        ButtonHoverColor;
+                };
+
+            button.MouseLeave +=
+                delegate
+                {
+                    button.BackColor =
+                        ButtonColor;
+                };
+
             return button;
         }
 
@@ -731,6 +999,8 @@ namespace VideoPlayer
             if (_videoList == null)
                 return;
 
+            _videoList.SuspendLayout();
+
             _videoList.Controls.Clear();
 
             for (
@@ -742,6 +1012,8 @@ namespace VideoPlayer
                     _videoList,
                     i);
             }
+
+            _videoList.ResumeLayout();
         }
 
         private void CreateVideoSlot(
@@ -758,23 +1030,28 @@ namespace VideoPlayer
                 345;
 
             slot.Height =
-                145;
-
-            slot.BackColor =
-                Color.FromArgb(27, 27, 32);
+                155;
 
             slot.Margin =
-                new Padding(0, 0, 0, 10);
+                new Padding(
+                    0,
+                    0,
+                    0,
+                    10);
+
+            slot.BackColor =
+                CardColor;
 
             // -----------------------------------------------------
-            // EPISODE NUMBER
+            // NUMBER
             // -----------------------------------------------------
 
             Label number =
                 new Label();
 
             number.Text =
-                (index + 1).ToString();
+                (index + 1).ToString(
+                    "00");
 
             number.ForeColor =
                 AccentColor;
@@ -786,12 +1063,15 @@ namespace VideoPlayer
                     FontStyle.Bold);
 
             number.Location =
-                new Point(12, 12);
+                new Point(
+                    12,
+                    12);
 
             number.AutoSize =
                 true;
 
-            slot.Controls.Add(number);
+            slot.Controls.Add(
+                number);
 
             // -----------------------------------------------------
             // TITLE
@@ -813,18 +1093,23 @@ namespace VideoPlayer
                     FontStyle.Bold);
 
             title.Location =
-                new Point(45, 12);
+                new Point(
+                    48,
+                    11);
 
             title.Size =
-                new Size(280, 22);
+                new Size(
+                    280,
+                    25);
 
             title.AutoEllipsis =
                 true;
 
-            slot.Controls.Add(title);
+            slot.Controls.Add(
+                title);
 
             // -----------------------------------------------------
-            // INTRO START
+            // INTRO START LABEL
             // -----------------------------------------------------
 
             Label startLabel =
@@ -836,13 +1121,25 @@ namespace VideoPlayer
             startLabel.ForeColor =
                 SecondaryTextColor;
 
+            startLabel.Font =
+                new Font(
+                    "Segoe UI",
+                    8);
+
             startLabel.Location =
-                new Point(12, 48);
+                new Point(
+                    12,
+                    48);
 
             startLabel.AutoSize =
                 true;
 
-            slot.Controls.Add(startLabel);
+            slot.Controls.Add(
+                startLabel);
+
+            // -----------------------------------------------------
+            // START BOX
+            // -----------------------------------------------------
 
             TextBox startBox =
                 new TextBox();
@@ -852,15 +1149,20 @@ namespace VideoPlayer
                     item.IntroStart);
 
             startBox.Location =
-                new Point(140, 45);
+                new Point(
+                    140,
+                    45);
 
             startBox.Size =
-                new Size(85, 23);
+                new Size(
+                    82,
+                    23);
 
-            slot.Controls.Add(startBox);
+            slot.Controls.Add(
+                startBox);
 
             // -----------------------------------------------------
-            // INTRO END
+            // END LABEL
             // -----------------------------------------------------
 
             Label endLabel =
@@ -872,13 +1174,25 @@ namespace VideoPlayer
             endLabel.ForeColor =
                 SecondaryTextColor;
 
+            endLabel.Font =
+                new Font(
+                    "Segoe UI",
+                    8);
+
             endLabel.Location =
-                new Point(12, 82);
+                new Point(
+                    12,
+                    80);
 
             endLabel.AutoSize =
                 true;
 
-            slot.Controls.Add(endLabel);
+            slot.Controls.Add(
+                endLabel);
+
+            // -----------------------------------------------------
+            // END BOX
+            // -----------------------------------------------------
 
             TextBox endBox =
                 new TextBox();
@@ -888,12 +1202,17 @@ namespace VideoPlayer
                     item.IntroEnd);
 
             endBox.Location =
-                new Point(140, 79);
+                new Point(
+                    140,
+                    77);
 
             endBox.Size =
-                new Size(85, 23);
+                new Size(
+                    82,
+                    23);
 
-            slot.Controls.Add(endBox);
+            slot.Controls.Add(
+                endBox);
 
             // -----------------------------------------------------
             // SAVE
@@ -906,10 +1225,14 @@ namespace VideoPlayer
                 "KAYDET";
 
             save.Location =
-                new Point(235, 45);
+                new Point(
+                    232,
+                    45);
 
             save.Size =
-                new Size(95, 57);
+                new Size(
+                    98,
+                    55);
 
             save.FlatStyle =
                 FlatStyle.Flat;
@@ -929,6 +1252,9 @@ namespace VideoPlayer
                     8,
                     FontStyle.Bold);
 
+            save.Cursor =
+                Cursors.Hand;
+
             save.Click +=
                 delegate
                 {
@@ -940,14 +1266,31 @@ namespace VideoPlayer
                         ParseTime(
                             endBox.Text);
 
-                    MessageBox.Show(
-                        "Intro ayarları kaydedildi.",
-                        "OLCAY KILIÇ TV",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information);
+                    save.Text =
+                        "✓ KAYDEDİLDİ";
+
+                    System.Windows.Forms.Timer resetTimer =
+                        new System.Windows.Forms.Timer();
+
+                    resetTimer.Interval =
+                        1200;
+
+                    resetTimer.Tick +=
+                        delegate
+                        {
+                            save.Text =
+                                "KAYDET";
+
+                            resetTimer.Stop();
+
+                            resetTimer.Dispose();
+                        };
+
+                    resetTimer.Start();
                 };
 
-            slot.Controls.Add(save);
+            slot.Controls.Add(
+                save);
 
             // -----------------------------------------------------
             // PLAY
@@ -957,13 +1300,17 @@ namespace VideoPlayer
                 new Button();
 
             play.Text =
-                "▶ OYNAT";
+                "▶  OYNAT";
 
             play.Location =
-                new Point(12, 112);
+                new Point(
+                    12,
+                    112);
 
             play.Size =
-                new Size(318, 28);
+                new Size(
+                    318,
+                    30);
 
             play.FlatStyle =
                 FlatStyle.Flat;
@@ -983,19 +1330,24 @@ namespace VideoPlayer
                     8,
                     FontStyle.Bold);
 
+            play.Cursor =
+                Cursors.Hand;
+
             play.Click +=
                 delegate
                 {
                     PlayVideo(index);
                 };
 
-            slot.Controls.Add(play);
+            slot.Controls.Add(
+                play);
 
-            list.Controls.Add(slot);
+            list.Controls.Add(
+                slot);
         }
 
         // =========================================================
-        // TIME
+        // TIME PARSE
         // =========================================================
 
         private string FormatSeconds(
@@ -1005,7 +1357,8 @@ namespace VideoPlayer
                 seconds = 0;
 
             TimeSpan time =
-                TimeSpan.FromSeconds(seconds);
+                TimeSpan.FromSeconds(
+                    seconds);
 
             if (time.Hours > 0)
             {
@@ -1020,10 +1373,14 @@ namespace VideoPlayer
         private int ParseTime(
             string value)
         {
-            if (string.IsNullOrWhiteSpace(value))
+            if (string.IsNullOrWhiteSpace(
+                value))
+            {
                 return 0;
+            }
 
-            value = value.Trim();
+            value =
+                value.Trim();
 
             if (int.TryParse(
                 value,
@@ -1047,10 +1404,9 @@ namespace VideoPlayer
                     int sec =
                         int.Parse(parts[1]);
 
-                    return
-                        Math.Max(
-                            0,
-                            minutes * 60 + sec);
+                    return Math.Max(
+                        0,
+                        minutes * 60 + sec);
                 }
 
                 if (parts.Length == 3)
@@ -1064,12 +1420,11 @@ namespace VideoPlayer
                     int sec =
                         int.Parse(parts[2]);
 
-                    return
-                        Math.Max(
-                            0,
-                            hours * 3600 +
-                            minutes * 60 +
-                            sec);
+                    return Math.Max(
+                        0,
+                        hours * 3600 +
+                        minutes * 60 +
+                        sec);
                 }
             }
             catch
@@ -1088,7 +1443,9 @@ namespace VideoPlayer
         {
             if (index < 0 ||
                 index >= _videos.Count)
+            {
                 return;
+            }
 
             VideoItem item =
                 _videos[index];
@@ -1099,7 +1456,7 @@ namespace VideoPlayer
                 MessageBox.Show(
                     "Video bulunamadı:\n\n" +
                     item.FilePath,
-                    "Hata",
+                    "OLCAY KILIÇ TV",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
 
@@ -1116,6 +1473,7 @@ namespace VideoPlayer
                 if (_currentMedia != null)
                 {
                     _currentMedia.Dispose();
+
                     _currentMedia = null;
                 }
 
@@ -1134,7 +1492,8 @@ namespace VideoPlayer
                 _playPauseButton.Text =
                     "❚❚";
 
-                _progressBar.Value = 0;
+                _progressBar.Value =
+                    0;
 
                 _currentTimeLabel.Text =
                     "00:00";
@@ -1142,7 +1501,12 @@ namespace VideoPlayer
                 _durationLabel.Text =
                     "00:00";
 
+                _skipIntroButton.Visible =
+                    false;
+
                 HideNextEpisodeNotice();
+
+                BringAllOverlaysToFront();
             }
             catch (Exception ex)
             {
@@ -1155,7 +1519,7 @@ namespace VideoPlayer
         }
 
         // =========================================================
-        // PLAY / PAUSE
+        // PLAY PAUSE
         // =========================================================
 
         private void TogglePlayPause()
@@ -1217,7 +1581,7 @@ namespace VideoPlayer
         }
 
         // =========================================================
-        // END REACHED
+        // VLC EVENTS
         // =========================================================
 
         private void MediaPlayer_EndReached(
@@ -1288,7 +1652,7 @@ namespace VideoPlayer
         }
 
         // =========================================================
-        // UPDATE PLAYER
+        // PLAYER UPDATE
         // =========================================================
 
         private void UpdateTimer_Tick(
@@ -1298,51 +1662,50 @@ namespace VideoPlayer
             if (_mediaPlayer == null)
                 return;
 
-            if (!_mediaPlayer.IsPlaying)
-                return;
-
             long time =
                 _mediaPlayer.Time;
 
             long length =
                 _mediaPlayer.Length;
 
-            if (length > 0)
+            if (length <= 0)
+                return;
+
+            double position =
+                (double)time /
+                length;
+
+            int value =
+                (int)(
+                    position *
+                    1000);
+
+            value =
+                Math.Max(
+                    0,
+                    Math.Min(
+                        1000,
+                        value));
+
+            if (!_progressBar.Focused)
             {
-                double position =
-                    (double)time /
-                    length;
+                _progressBar.Value =
+                    value;
+            }
 
-                int value =
-                    (int)(
-                        position * 1000);
-
-                value =
-                    Math.Max(
-                        0,
-                        Math.Min(
-                            1000,
-                            value));
-
-                if (!_progressBar.Focused)
-                {
-                    _progressBar.Value =
-                        value;
-                }
-
-                _currentTimeLabel.Text =
-                    FormatMilliseconds(time);
-
-                _durationLabel.Text =
-                    FormatMilliseconds(length);
-
-                CheckIntro(
+            _currentTimeLabel.Text =
+                FormatMilliseconds(
                     time);
 
-                CheckNextEpisode(
-                    time,
+            _durationLabel.Text =
+                FormatMilliseconds(
                     length);
-            }
+
+            CheckIntro(time);
+
+            CheckNextEpisode(
+                time,
+                length);
         }
 
         private string FormatMilliseconds(
@@ -1351,17 +1714,17 @@ namespace VideoPlayer
             if (milliseconds < 0)
                 milliseconds = 0;
 
-            TimeSpan t =
+            TimeSpan time =
                 TimeSpan.FromMilliseconds(
                     milliseconds);
 
-            if (t.Hours > 0)
+            if (time.Hours > 0)
             {
-                return t.ToString(
+                return time.ToString(
                     @"hh\:mm\:ss");
             }
 
-            return t.ToString(
+            return time.ToString(
                 @"mm\:ss");
         }
 
@@ -1373,9 +1736,6 @@ namespace VideoPlayer
             object? sender,
             EventArgs e)
         {
-            if (_mediaPlayer == null)
-                return;
-
             long length =
                 _mediaPlayer.Length;
 
@@ -1388,11 +1748,12 @@ namespace VideoPlayer
 
             _mediaPlayer.Time =
                 (long)(
-                    length * position);
+                    length *
+                    position);
         }
 
         // =========================================================
-        // INTRO
+        // INTRO BUTTON
         // =========================================================
 
         private void CreateSkipIntroButton()
@@ -1404,14 +1765,16 @@ namespace VideoPlayer
                 "⏩  INTRO'YU ATLA";
 
             _skipIntroButton.Size =
-                new Size(180, 45);
+                new Size(
+                    185,
+                    45);
 
             _skipIntroButton.BackColor =
                 Color.FromArgb(
-                    210,
+                    225,
                     20,
                     20,
-                    24);
+                    25);
 
             _skipIntroButton.ForeColor =
                 Color.White;
@@ -1437,15 +1800,6 @@ namespace VideoPlayer
             _skipIntroButton.Visible =
                 false;
 
-            _skipIntroButton.Anchor =
-                AnchorStyles.Right |
-                AnchorStyles.Bottom;
-
-            _skipIntroButton.Location =
-                new Point(
-                    ClientSize.Width - 215,
-                    ClientSize.Height - 170);
-
             _skipIntroButton.Click +=
                 SkipIntroButton_Click;
 
@@ -1460,7 +1814,12 @@ namespace VideoPlayer
         {
             if (_currentIndex < 0 ||
                 _currentIndex >= _videos.Count)
+            {
+                _skipIntroButton.Visible =
+                    false;
+
                 return;
+            }
 
             VideoItem item =
                 _videos[_currentIndex];
@@ -1468,12 +1827,18 @@ namespace VideoPlayer
             long currentSeconds =
                 time / 1000;
 
-            if (item.IntroEnd > item.IntroStart &&
-                currentSeconds >= item.IntroStart &&
-                currentSeconds < item.IntroEnd)
+            if (
+                item.IntroEnd >
+                item.IntroStart &&
+                currentSeconds >=
+                item.IntroStart &&
+                currentSeconds <
+                item.IntroEnd)
             {
                 _skipIntroButton.Visible =
                     true;
+
+                _skipIntroButton.BringToFront();
             }
             else
             {
@@ -1488,7 +1853,9 @@ namespace VideoPlayer
         {
             if (_currentIndex < 0 ||
                 _currentIndex >= _videos.Count)
+            {
                 return;
+            }
 
             VideoItem item =
                 _videos[_currentIndex];
@@ -1504,7 +1871,7 @@ namespace VideoPlayer
         }
 
         // =========================================================
-        // NEXT EPISODE
+        // NEXT EPISODE PANEL
         // =========================================================
 
         private void CreateNextEpisodePanel()
@@ -1513,18 +1880,16 @@ namespace VideoPlayer
                 new Panel();
 
             _nextEpisodePanel.Size =
-                new Size(330, 145);
+                new Size(
+                    350,
+                    150);
 
             _nextEpisodePanel.BackColor =
                 Color.FromArgb(
-                    235,
+                    242,
                     18,
                     18,
                     22);
-
-            _nextEpisodePanel.Anchor =
-                AnchorStyles.Right |
-                AnchorStyles.Bottom;
 
             _nextEpisodePanel.Visible =
                 false;
@@ -1548,7 +1913,9 @@ namespace VideoPlayer
                     FontStyle.Bold);
 
             header.Location =
-                new Point(20, 12);
+                new Point(
+                    20,
+                    12);
 
             header.AutoSize =
                 true;
@@ -1572,10 +1939,17 @@ namespace VideoPlayer
                     FontStyle.Bold);
 
             _nextEpisodeTitle.Location =
-                new Point(20, 38);
+                new Point(
+                    20,
+                    40);
 
             _nextEpisodeTitle.Size =
-                new Size(290, 30);
+                new Size(
+                    310,
+                    25);
+
+            _nextEpisodeTitle.AutoEllipsis =
+                true;
 
             _nextEpisodePanel.Controls.Add(
                 _nextEpisodeTitle);
@@ -1584,19 +1958,21 @@ namespace VideoPlayer
                 new Label();
 
             _nextEpisodeCountdown.Text =
-                "10";
+                "⏭ 10 saniye sonra başlıyor";
 
             _nextEpisodeCountdown.ForeColor =
-                Color.White;
+                SecondaryTextColor;
 
             _nextEpisodeCountdown.Font =
                 new Font(
                     "Segoe UI",
-                    16,
+                    9,
                     FontStyle.Bold);
 
             _nextEpisodeCountdown.Location =
-                new Point(20, 70);
+                new Point(
+                    20,
+                    72);
 
             _nextEpisodeCountdown.AutoSize =
                 true;
@@ -1611,10 +1987,14 @@ namespace VideoPlayer
                 "ŞİMDİ İZLE  ▶";
 
             _watchNowButton.Location =
-                new Point(155, 72);
+                new Point(
+                    20,
+                    102);
 
             _watchNowButton.Size =
-                new Size(145, 42);
+                new Size(
+                    310,
+                    35);
 
             _watchNowButton.FlatStyle =
                 FlatStyle.Flat;
@@ -1634,6 +2014,9 @@ namespace VideoPlayer
                     9,
                     FontStyle.Bold);
 
+            _watchNowButton.Cursor =
+                Cursors.Hand;
+
             _watchNowButton.Click +=
                 delegate
                 {
@@ -1652,18 +2035,30 @@ namespace VideoPlayer
         {
             if (_currentIndex < 0 ||
                 _currentIndex >= _videos.Count)
+            {
                 return;
+            }
+
+            if (_videos.Count <= 1)
+            {
+                HideNextEpisodeNotice();
+                return;
+            }
 
             long remaining =
                 length - time;
 
-            if (remaining <= 10000 &&
-                remaining > 0 &&
-                _videos.Count > 1)
+            if (
+                remaining <= 10000 &&
+                remaining > 0)
             {
-                ShowNextEpisodeNotice(
+                int seconds =
                     (int)Math.Ceiling(
-                        remaining / 1000.0));
+                        remaining /
+                        1000.0);
+
+                ShowNextEpisodeNotice(
+                    seconds);
             }
             else
             {
@@ -1709,21 +2104,18 @@ namespace VideoPlayer
 
         private void ToggleMute()
         {
+            _mediaPlayer.Mute =
+                !_mediaPlayer.Mute;
+
             if (_mediaPlayer.Mute)
             {
-                _mediaPlayer.Mute =
-                    false;
-
                 _muteButton.Text =
-                    "🔊";
+                    "🔇";
             }
             else
             {
-                _mediaPlayer.Mute =
-                    true;
-
                 _muteButton.Text =
-                    "🔇";
+                    "🔊";
             }
         }
 
@@ -1739,12 +2131,14 @@ namespace VideoPlayer
             {
                 MessageBox.Show(
                     "En fazla 20 video ekleyebilirsin.",
-                    "OLCAY KILIÇ TV");
+                    "OLCAY KILIÇ TV",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
 
                 return;
             }
 
-            OpenFileDialog dialog =
+            using OpenFileDialog dialog =
                 new OpenFileDialog();
 
             dialog.Title =
@@ -1758,7 +2152,9 @@ namespace VideoPlayer
 
             if (dialog.ShowDialog() !=
                 DialogResult.OK)
+            {
                 return;
+            }
 
             foreach (
                 string file in
@@ -1789,20 +2185,29 @@ namespace VideoPlayer
         {
             if (_currentIndex < 0 ||
                 _currentIndex >= _videos.Count)
+            {
+                MessageBox.Show(
+                    "Önce bir bölüm oynat.",
+                    "OLCAY KILIÇ TV");
+
                 return;
+            }
+
+            _mediaPlayer.Stop();
 
             _videos.RemoveAt(
                 _currentIndex);
 
             _currentIndex = -1;
 
-            _mediaPlayer.Stop();
+            _titleLabel.Text =
+                "OLCAY KILIÇ TV";
 
             RefreshVideoSlots();
         }
 
         // =========================================================
-        // UP
+        // MOVE UP
         // =========================================================
 
         private void UpButton_Click(
@@ -1827,7 +2232,7 @@ namespace VideoPlayer
         }
 
         // =========================================================
-        // DOWN
+        // MOVE DOWN
         // =========================================================
 
         private void DownButton_Click(
@@ -1837,7 +2242,9 @@ namespace VideoPlayer
             if (_currentIndex < 0 ||
                 _currentIndex >=
                 _videos.Count - 1)
+            {
                 return;
+            }
 
             VideoItem temp =
                 _videos[_currentIndex];
@@ -1874,17 +2281,23 @@ namespace VideoPlayer
             WindowState =
                 FormWindowState.Maximized;
 
-            TopMost = false;
-
-            _isFullscreen = true;
+            _isFullscreen =
+                true;
 
             _sideBar.Visible =
                 false;
 
-            _fullscreenButton.Text =
-                "⛶";
+            _topBar.Visible =
+                true;
+
+            _bottomBar.Visible =
+                true;
+
+            ShowMouseControls();
 
             UpdateOverlayPositions();
+
+            BringAllOverlaysToFront();
         }
 
         private void EnterFullscreen()
@@ -1907,16 +2320,19 @@ namespace VideoPlayer
             WindowState =
                 FormWindowState.Maximized;
 
-            _isFullscreen = true;
+            _isFullscreen =
+                true;
 
             _sideBar.Visible =
                 false;
 
+            _topBar.Visible =
+                true;
+
             _bottomBar.Visible =
                 true;
 
-            _topBar.Visible =
-                true;
+            ShowMouseControls();
 
             UpdateOverlayPositions();
         }
@@ -1935,7 +2351,8 @@ namespace VideoPlayer
             Bounds =
                 _oldBounds;
 
-            _isFullscreen = false;
+            _isFullscreen =
+                false;
 
             _sideBar.Visible =
                 true;
@@ -1946,41 +2363,59 @@ namespace VideoPlayer
             _bottomBar.Visible =
                 true;
 
+            ShowMouseCursor();
+
             UpdateOverlayPositions();
 
-            ShowMouseControls();
+            BringAllOverlaysToFront();
         }
 
         private void ToggleFullscreen()
         {
             if (_isFullscreen)
+            {
                 ExitFullscreen();
+            }
             else
+            {
                 EnterFullscreen();
+            }
         }
+
+        // =========================================================
+        // OVERLAY POSITIONS
+        // =========================================================
 
         private void UpdateOverlayPositions()
         {
-            if (_skipIntroButton == null)
-                return;
-
-            _skipIntroButton.Location =
-                new Point(
-                    ClientSize.Width -
-                    _skipIntroButton.Width -
-                    25,
-                    ClientSize.Height -
-                    175);
+            if (_skipIntroButton != null)
+            {
+                _skipIntroButton.Location =
+                    new Point(
+                        Math.Max(
+                            10,
+                            ClientSize.Width -
+                            _skipIntroButton.Width -
+                            30),
+                        Math.Max(
+                            10,
+                            ClientSize.Height -
+                            180));
+            }
 
             if (_nextEpisodePanel != null)
             {
                 _nextEpisodePanel.Location =
                     new Point(
-                        ClientSize.Width -
-                        _nextEpisodePanel.Width -
-                        25,
-                        ClientSize.Height -
-                        330);
+                        Math.Max(
+                            10,
+                            ClientSize.Width -
+                            _nextEpisodePanel.Width -
+                            30),
+                        Math.Max(
+                            10,
+                            ClientSize.Height -
+                            340));
             }
         }
 
@@ -2010,45 +2445,141 @@ namespace VideoPlayer
             }
         }
 
+        // =========================================================
+        // SHOW CURSOR
+        // =========================================================
+
+        private void ShowMouseCursor()
+        {
+            if (!_cursorHidden)
+                return;
+
+            while (
+                ShowCursor(true) < 0)
+            {
+            }
+
+            _cursorHidden =
+                false;
+        }
+
+        // =========================================================
+        // HIDE CURSOR
+        // =========================================================
+
+        private void HideMouseCursor()
+        {
+            if (_cursorHidden)
+                return;
+
+            while (
+                ShowCursor(false) >= 0)
+            {
+            }
+
+            _cursorHidden =
+                true;
+        }
+
+        // =========================================================
+        // SHOW CONTROLS
+        // =========================================================
+
         private void ShowMouseControls()
         {
-            _mouseIdleSeconds = 0;
+            _mouseIdleSeconds =
+                0;
+
+            ShowMouseCursor();
 
             if (!_isFullscreen)
                 return;
 
-            _bottomBar.Visible =
-                true;
-
             _topBar.Visible =
                 true;
 
-            Cursor =
-                Cursors.Default;
+            _bottomBar.Visible =
+                true;
 
-            _bottomBar.BringToFront();
             _topBar.BringToFront();
 
-            if (_skipIntroButton.Visible)
-                _skipIntroButton.BringToFront();
+            _bottomBar.BringToFront();
 
-            if (_nextEpisodePanel.Visible)
+            if (
+                _skipIntroButton != null &&
+                _skipIntroButton.Visible)
+            {
+                _skipIntroButton.BringToFront();
+            }
+
+            if (
+                _nextEpisodePanel != null &&
+                _nextEpisodePanel.Visible)
+            {
                 _nextEpisodePanel.BringToFront();
+            }
         }
+
+        // =========================================================
+        // HIDE CONTROLS
+        // =========================================================
 
         private void HideMouseControls()
         {
             if (!_isFullscreen)
                 return;
 
-            _bottomBar.Visible =
-                false;
-
             _topBar.Visible =
                 false;
 
-            Cursor =
-                Cursors.None;
+            _bottomBar.Visible =
+                false;
+
+            HideMouseCursor();
+
+            if (
+                _skipIntroButton != null &&
+                _skipIntroButton.Visible)
+            {
+                _skipIntroButton.BringToFront();
+            }
+
+            if (
+                _nextEpisodePanel != null &&
+                _nextEpisodePanel.Visible)
+            {
+                _nextEpisodePanel.BringToFront();
+            }
+        }
+
+        // =========================================================
+        // BRING OVERLAYS
+        // =========================================================
+
+        private void BringAllOverlaysToFront()
+        {
+            if (_topBar != null)
+                _topBar.BringToFront();
+
+            if (_bottomBar != null)
+                _bottomBar.BringToFront();
+
+            if (
+                _skipIntroButton != null &&
+                _skipIntroButton.Visible)
+            {
+                _skipIntroButton.BringToFront();
+            }
+
+            if (
+                _nextEpisodePanel != null &&
+                _nextEpisodePanel.Visible)
+            {
+                _nextEpisodePanel.BringToFront();
+            }
+
+            if (_sideBar != null)
+                _sideBar.BringToFront();
         }
 
         // =========================================================
@@ -2059,7 +2590,10 @@ namespace VideoPlayer
             object? sender,
             KeyEventArgs e)
         {
+            // -----------------------------------------------------
             // ESC
+            // -----------------------------------------------------
+
             if (e.KeyCode ==
                 Keys.Escape)
             {
@@ -2071,39 +2605,91 @@ namespace VideoPlayer
                 return;
             }
 
+            // -----------------------------------------------------
             // F11
+            // -----------------------------------------------------
+
             if (e.KeyCode ==
                 Keys.F11)
             {
                 ToggleFullscreen();
+
+                e.SuppressKeyPress =
+                    true;
+
                 return;
             }
 
+            // -----------------------------------------------------
             // SPACE
+            // -----------------------------------------------------
+
             if (e.KeyCode ==
                 Keys.Space)
             {
                 TogglePlayPause();
-                e.SuppressKeyPress = true;
+
+                e.SuppressKeyPress =
+                    true;
+
                 return;
             }
 
+            // -----------------------------------------------------
             // LEFT
+            // -----------------------------------------------------
+
             if (e.KeyCode ==
                 Keys.Left)
             {
                 if (_mediaPlayer.Time > 10000)
-                    _mediaPlayer.Time -= 10000;
+                {
+                    _mediaPlayer.Time -=
+                        10000;
+                }
+                else
+                {
+                    _mediaPlayer.Time =
+                        0;
+                }
 
                 return;
             }
 
+            // -----------------------------------------------------
             // RIGHT
+            // -----------------------------------------------------
+
             if (e.KeyCode ==
                 Keys.Right)
             {
-                _mediaPlayer.Time +=
+                long newTime =
+                    _mediaPlayer.Time +
                     10000;
+
+                if (
+                    _mediaPlayer.Length > 0 &&
+                    newTime >
+                    _mediaPlayer.Length)
+                {
+                    newTime =
+                        _mediaPlayer.Length;
+                }
+
+                _mediaPlayer.Time =
+                    newTime;
+
+                return;
+            }
+
+            // -----------------------------------------------------
+            // M
+            // -----------------------------------------------------
+
+            if (e.KeyCode ==
+                Keys.M)
+            {
+                ToggleMute();
 
                 return;
             }
@@ -2113,16 +2699,34 @@ namespace VideoPlayer
         // RESIZE
         // =========================================================
 
-        protected override void OnResize(
+        private void MainForm_Resize(
+            object? sender,
             EventArgs e)
         {
-            base.OnResize(e);
-
             UpdateOverlayPositions();
+
+            if (_bottomBar != null)
+            {
+                PositionFullscreenButton();
+            }
+        }
+
+        private void PositionFullscreenButton()
+        {
+            if (_fullscreenButton == null ||
+                _bottomBar == null)
+            {
+                return;
+            }
+
+            _fullscreenButton.Left =
+                _bottomBar.ClientSize.Width -
+                _fullscreenButton.Width -
+                20;
         }
 
         // =========================================================
-        // CLOSE
+        // FORM CLOSE
         // =========================================================
 
         protected override void OnFormClosed(
@@ -2130,12 +2734,23 @@ namespace VideoPlayer
         {
             try
             {
+                if (_cursorHidden)
+                {
+                    ShowMouseCursor();
+                }
+
                 _updateTimer?.Stop();
+
                 _mouseTimer?.Stop();
 
                 _mediaPlayer?.Stop();
 
-                _currentMedia?.Dispose();
+                if (_currentMedia != null)
+                {
+                    _currentMedia.Dispose();
+
+                    _currentMedia = null;
+                }
 
                 _mediaPlayer?.Dispose();
 

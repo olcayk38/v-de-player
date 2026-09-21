@@ -1033,33 +1033,31 @@ namespace VideoPlayer
         // SLOT'LARI OLUŞTUR
         // =========================================================
 
-        private void RefreshVideoSlots()
-        {
-            Control[] controls =
-                _sideBar.Controls
-                    .Find(
-                        "VideoList",
-                        true);
+       private void RefreshVideoSlots()
+{
+    Control[] controls =
+        _sideBar.Controls.Find(
+            "VideoList",
+            true);
 
-            if (controls.Length == 0)
-                return;
+    if (controls.Length == 0)
+        return;
 
-            FlowLayoutPanel videoList =
-                controls[0]
-                as FlowLayoutPanel!;
+    FlowLayoutPanel? videoList =
+        controls[0] as FlowLayoutPanel;
 
-            videoList.Controls.Clear();
+    if (videoList == null)
+        return;
 
-            for (
-                int i = 0;
-                i < _videos.Count;
-                i++)
-            {
-                CreateVideoSlot(
-                    videoList,
-                    i);
-            }
-        }
+    videoList.Controls.Clear();
+
+    for (int i = 0; i < _videos.Count; i++)
+    {
+        CreateVideoSlot(
+            videoList,
+            i);
+    }
+}
 
 
         // =========================================================

@@ -14,10 +14,26 @@ namespace VideoPlayer
         static void Main()
         {
             ApplicationConfiguration.Initialize();
-
             Core.Initialize();
 
             Application.Run(new MainForm());
+        }
+    }
+
+    public class VideoItem
+    {
+        public string FilePath { get; set; } = "";
+
+        public int IntroStart { get; set; } = 0;
+
+        public int IntroEnd { get; set; } = 0;
+
+        public string Title
+        {
+            get
+            {
+                return Path.GetFileNameWithoutExtension(FilePath);
+            }
         }
     }
 
@@ -34,7 +50,6 @@ namespace VideoPlayer
 
         private Label _titleLabel = null!;
         private Label _timeLabel = null!;
-        private Label _volumeLabel = null!;
 
         private Button _playButton = null!;
         private Button _prevButton = null!;
@@ -45,7 +60,7 @@ namespace VideoPlayer
         private TrackBar _progressBar = null!;
         private TrackBar _volumeBar = null!;
 
-        private ListBox _playlist = null!;
+        private Label _volumeLabel = null!;
 
         private Button _addButton = null!;
         private Button _removeButton = null!;
@@ -55,23 +70,29 @@ namespace VideoPlayer
         private Label _emptyLabel = null!;
 
         private Panel _notificationPanel = null!;
-        private Label _notificationLabel = null!;
+        private Label _notificationTitle = null!;
+        private Label _notificationEpisode = null!;
+        private Label _notificationCountdown = null!;
+        private Button _notificationPlayButton = null!;
 
-        // ÖNEMLİ:
-        // Timer artık açıkça Windows Forms Timer.
+        private Button _skipIntroButton = null!;
+
         private System.Windows.Forms.Timer _updateTimer = null!;
         private System.Windows.Forms.Timer _mouseTimer = null!;
 
-        private List<string> _videos =
-            new List<string>();
+        private List<VideoItem> _videos =
+            new List<VideoItem>();
 
         private int _currentIndex = -1;
 
         private bool _isFullscreen = false;
 
-        private bool _controlsHidden = false;
-
         private bool _noticeShown = false;
+
+        private int _nextCountdown = 10;
+
+        private DateTime _lastMouseMove =
+            DateTime.Now;
 
         private FormBorderStyle _oldBorderStyle;
 
@@ -79,32 +100,36 @@ namespace VideoPlayer
 
         private Rectangle _oldBounds;
 
-        private Point _lastMousePosition;
-
 
         public MainForm()
         {
-            Text = "OLCAY KILIÇ VIDEO PLAYER";
+            Text =
+                "OLCAY KILIÇ TV";
 
-            Width = 1400;
+            Width = 1500;
 
-            Height = 850;
+            Height = 900;
 
             MinimumSize =
-                new Size(1000, 650);
+                new Size(1100, 700);
 
             StartPosition =
                 FormStartPosition.CenterScreen;
 
             BackColor =
-                Color.FromArgb(10, 10, 12);
+                Color.FromArgb(
+                    8,
+                    8,
+                    10);
 
             KeyPreview = true;
 
-            _libVLC = new LibVLC();
+            _libVLC =
+                new LibVLC();
 
             _mediaPlayer =
-                new MediaPlayer(_libVLC);
+                new MediaPlayer(
+                    _libVLC);
 
             _mediaPlayer.EndReached +=
                 MediaPlayer_EndReached;
@@ -114,7 +139,8 @@ namespace VideoPlayer
             _updateTimer =
                 new System.Windows.Forms.Timer();
 
-            _updateTimer.Interval = 250;
+            _updateTimer.Interval =
+                250;
 
             _updateTimer.Tick +=
                 UpdateTimer_Tick;
@@ -124,7 +150,8 @@ namespace VideoPlayer
             _mouseTimer =
                 new System.Windows.Forms.Timer();
 
-            _mouseTimer.Interval = 1000;
+            _mouseTimer.Interval =
+                1000;
 
             _mouseTimer.Tick +=
                 MouseTimer_Tick;
@@ -137,23 +164,8 @@ namespace VideoPlayer
             KeyDown +=
                 MainForm_KeyDown;
 
-            Shown +=
-                MainForm_Shown;
-        }
-
-
-        // =========================================================
-        // FORM AÇILDI
-        // =========================================================
-
-        private void MainForm_Shown(
-            object? sender,
-            EventArgs e)
-        {
-            CenterNotification();
-
-            _lastMousePosition =
-                Cursor.Position;
+            Resize +=
+                MainForm_Resize;
         }
 
 
@@ -163,7 +175,10 @@ namespace VideoPlayer
 
         private void BuildInterface()
         {
+            // =====================================================
             // VIDEO
+            // =====================================================
+
             _videoView =
                 new VideoView();
 
@@ -180,7 +195,10 @@ namespace VideoPlayer
                 _videoView);
 
 
+            // =====================================================
             // ÜST BAR
+            // =====================================================
+
             _topBar =
                 new Panel();
 
@@ -188,13 +206,13 @@ namespace VideoPlayer
                 DockStyle.Top;
 
             _topBar.Height =
-                65;
+                70;
 
             _topBar.BackColor =
                 Color.FromArgb(
-                    18,
-                    18,
-                    22);
+                    12,
+                    12,
+                    15);
 
             Controls.Add(
                 _topBar);
@@ -204,7 +222,7 @@ namespace VideoPlayer
                 new Label();
 
             _titleLabel.Text =
-                "OLCAY KILIÇ VIDEO PLAYER";
+                "OLCAY KILIÇ TV";
 
             _titleLabel.ForeColor =
                 Color.White;
@@ -212,20 +230,25 @@ namespace VideoPlayer
             _titleLabel.Font =
                 new Font(
                     "Segoe UI",
-                    15,
+                    18,
                     FontStyle.Bold);
 
             _titleLabel.AutoSize =
                 true;
 
             _titleLabel.Location =
-                new Point(22, 20);
+                new Point(
+                    25,
+                    20);
 
             _topBar.Controls.Add(
                 _titleLabel);
 
 
-            // SAĞ PANEL
+            // =====================================================
+            // SAĞ VIDEO PANELİ
+            // =====================================================
+
             _sideBar =
                 new Panel();
 
@@ -233,53 +256,89 @@ namespace VideoPlayer
                 DockStyle.Right;
 
             _sideBar.Width =
-                300;
+                390;
 
             _sideBar.BackColor =
                 Color.FromArgb(
-                    20,
-                    20,
-                    24);
+                    17,
+                    17,
+                    21);
 
             Controls.Add(
                 _sideBar);
 
 
-            // PLAYLIST
-            _playlist =
-                new ListBox();
+            Label listTitle =
+                new Label();
 
-            _playlist.Dock =
-                DockStyle.Fill;
+            listTitle.Text =
+                "BÖLÜMLER";
 
-            _playlist.BackColor =
-                Color.FromArgb(
-                    25,
-                    25,
-                    29);
-
-            _playlist.ForeColor =
+            listTitle.ForeColor =
                 Color.White;
 
-            _playlist.BorderStyle =
-                BorderStyle.None;
-
-            _playlist.Font =
+            listTitle.Font =
                 new Font(
                     "Segoe UI",
-                    11);
+                    13,
+                    FontStyle.Bold);
 
-            _playlist.ItemHeight =
-                36;
+            listTitle.Dock =
+                DockStyle.Top;
 
-            _playlist.SelectedIndexChanged +=
-                Playlist_SelectedIndexChanged;
+            listTitle.Height =
+                50;
+
+            listTitle.TextAlign =
+                ContentAlignment.MiddleLeft;
+
+            listTitle.Padding =
+                new Padding(
+                    15,
+                    0,
+                    0,
+                    0);
 
             _sideBar.Controls.Add(
-                _playlist);
+                listTitle);
 
 
-            // PLAYLIST BUTONLARI
+            // =====================================================
+            // VIDEO SLOT PANELİ
+            // =====================================================
+
+            FlowLayoutPanel videoList =
+                new FlowLayoutPanel();
+
+            videoList.Name =
+                "VideoList";
+
+            videoList.Dock =
+                DockStyle.Fill;
+
+            videoList.FlowDirection =
+                FlowDirection.TopDown;
+
+            videoList.WrapContents =
+                false;
+
+            videoList.AutoScroll =
+                true;
+
+            videoList.BackColor =
+                Color.FromArgb(
+                    17,
+                    17,
+                    21);
+
+            _sideBar.Controls.Add(
+                videoList);
+
+
+            // =====================================================
+            // BUTONLAR
+            // =====================================================
+
             Panel playlistButtons =
                 new Panel();
 
@@ -287,26 +346,29 @@ namespace VideoPlayer
                 DockStyle.Bottom;
 
             playlistButtons.Height =
-                150;
+                105;
 
             playlistButtons.BackColor =
                 Color.FromArgb(
-                    18,
-                    18,
-                    22);
+                    12,
+                    12,
+                    15);
 
             _sideBar.Controls.Add(
                 playlistButtons);
 
 
             _addButton =
-                CreateButton("+ VİDEO EKLE");
+                CreateButton(
+                    "+ VİDEO EKLE");
 
             _addButton.Location =
-                new Point(15, 12);
+                new Point(
+                    15,
+                    10);
 
             _addButton.Width =
-                270;
+                350;
 
             _addButton.Click +=
                 AddButton_Click;
@@ -316,13 +378,16 @@ namespace VideoPlayer
 
 
             _removeButton =
-                CreateButton("VİDEOYU SİL");
+                CreateButton(
+                    "SİL");
 
             _removeButton.Location =
-                new Point(15, 52);
+                new Point(
+                    15,
+                    52);
 
             _removeButton.Width =
-                130;
+                100;
 
             _removeButton.Click +=
                 RemoveButton_Click;
@@ -332,13 +397,16 @@ namespace VideoPlayer
 
 
             _upButton =
-                CreateButton("▲");
+                CreateButton(
+                    "▲");
 
             _upButton.Location =
-                new Point(155, 52);
+                new Point(
+                    125,
+                    52);
 
             _upButton.Width =
-                60;
+                70;
 
             _upButton.Click +=
                 UpButton_Click;
@@ -348,13 +416,16 @@ namespace VideoPlayer
 
 
             _downButton =
-                CreateButton("▼");
+                CreateButton(
+                    "▼");
 
             _downButton.Location =
-                new Point(225, 52);
+                new Point(
+                    205,
+                    52);
 
             _downButton.Width =
-                60;
+                70;
 
             _downButton.Click +=
                 DownButton_Click;
@@ -363,13 +434,16 @@ namespace VideoPlayer
                 _downButton);
 
 
-            // BOŞ EKRAN YAZISI
+            // =====================================================
+            // BOŞ EKRAN
+            // =====================================================
+
             _emptyLabel =
                 new Label();
 
             _emptyLabel.Text =
                 "VIDEO EKLE\n\n" +
-                "En fazla 20 video ekleyebilirsin.";
+                "En fazla 20 bölüm ekleyebilirsin.";
 
             _emptyLabel.ForeColor =
                 Color.FromArgb(
@@ -380,16 +454,16 @@ namespace VideoPlayer
             _emptyLabel.BackColor =
                 Color.Transparent;
 
-            _emptyLabel.TextAlign =
-                ContentAlignment.MiddleCenter;
-
             _emptyLabel.Dock =
                 DockStyle.Fill;
+
+            _emptyLabel.TextAlign =
+                ContentAlignment.MiddleCenter;
 
             _emptyLabel.Font =
                 new Font(
                     "Segoe UI",
-                    14,
+                    18,
                     FontStyle.Bold);
 
             _videoView.Controls.Add(
@@ -398,7 +472,10 @@ namespace VideoPlayer
             _emptyLabel.BringToFront();
 
 
+            // =====================================================
             // ALT BAR
+            // =====================================================
+
             _bottomBar =
                 new Panel();
 
@@ -410,15 +487,18 @@ namespace VideoPlayer
 
             _bottomBar.BackColor =
                 Color.FromArgb(
-                    18,
-                    18,
-                    22);
+                    12,
+                    12,
+                    15);
 
             Controls.Add(
                 _bottomBar);
 
 
+            // =====================================================
             // PROGRESS
+            // =====================================================
+
             _progressBar =
                 new TrackBar();
 
@@ -428,17 +508,16 @@ namespace VideoPlayer
             _progressBar.Maximum =
                 1000;
 
-            _progressBar.Value =
-                0;
-
             _progressBar.TickStyle =
                 TickStyle.None;
 
             _progressBar.Location =
-                new Point(20, 5);
+                new Point(
+                    20,
+                    5);
 
             _progressBar.Width =
-                ClientSize.Width - 360;
+                650;
 
             _progressBar.Anchor =
                 AnchorStyles.Left |
@@ -452,7 +531,10 @@ namespace VideoPlayer
                 _progressBar);
 
 
+            // =====================================================
             // SÜRE
+            // =====================================================
+
             _timeLabel =
                 new Label();
 
@@ -466,23 +548,26 @@ namespace VideoPlayer
                 true;
 
             _timeLabel.Location =
-                new Point(20, 35);
-
-            _timeLabel.Font =
-                new Font(
-                    "Segoe UI",
-                    10);
+                new Point(
+                    20,
+                    38);
 
             _bottomBar.Controls.Add(
                 _timeLabel);
 
 
-            // ÖNCEKİ
+            // =====================================================
+            // GERİ
+            // =====================================================
+
             _prevButton =
-                CreateButton("⏮");
+                CreateButton(
+                    "⏮");
 
             _prevButton.Location =
-                new Point(190, 28);
+                new Point(
+                    170,
+                    30);
 
             _prevButton.Width =
                 50;
@@ -494,12 +579,18 @@ namespace VideoPlayer
                 _prevButton);
 
 
+            // =====================================================
             // PLAY
+            // =====================================================
+
             _playButton =
-                CreateButton("▶");
+                CreateButton(
+                    "▶");
 
             _playButton.Location =
-                new Point(250, 28);
+                new Point(
+                    230,
+                    30);
 
             _playButton.Width =
                 60;
@@ -511,12 +602,18 @@ namespace VideoPlayer
                 _playButton);
 
 
-            // SONRAKİ
+            // =====================================================
+            // İLERİ
+            // =====================================================
+
             _nextButton =
-                CreateButton("⏭");
+                CreateButton(
+                    "⏭");
 
             _nextButton.Location =
-                new Point(320, 28);
+                new Point(
+                    300,
+                    30);
 
             _nextButton.Width =
                 50;
@@ -528,12 +625,18 @@ namespace VideoPlayer
                 _nextButton);
 
 
-            // MUTE
+            // =====================================================
+            // SES
+            // =====================================================
+
             _muteButton =
-                CreateButton("🔊");
+                CreateButton(
+                    "🔊");
 
             _muteButton.Location =
-                new Point(400, 28);
+                new Point(
+                    370,
+                    30);
 
             _muteButton.Width =
                 55;
@@ -545,7 +648,6 @@ namespace VideoPlayer
                 _muteButton);
 
 
-            // SES
             _volumeBar =
                 new TrackBar();
 
@@ -562,10 +664,12 @@ namespace VideoPlayer
                 TickStyle.None;
 
             _volumeBar.Location =
-                new Point(455, 28);
+                new Point(
+                    430,
+                    30);
 
             _volumeBar.Width =
-                110;
+                100;
 
             _volumeBar.ValueChanged +=
                 VolumeBar_ValueChanged;
@@ -587,19 +691,24 @@ namespace VideoPlayer
                 true;
 
             _volumeLabel.Location =
-                new Point(570, 36);
+                new Point(
+                    535,
+                    38);
 
             _bottomBar.Controls.Add(
                 _volumeLabel);
 
 
+            // =====================================================
             // FULLSCREEN
+            // =====================================================
+
             _fullscreenButton =
                 CreateButton(
-                    "⛶ TAM EKRAN");
+                    "⛶");
 
             _fullscreenButton.Width =
-                130;
+                55;
 
             _fullscreenButton.Anchor =
                 AnchorStyles.Top |
@@ -607,8 +716,8 @@ namespace VideoPlayer
 
             _fullscreenButton.Location =
                 new Point(
-                    ClientSize.Width - 160,
-                    28);
+                    ClientSize.Width - 80,
+                    30);
 
             _fullscreenButton.Click +=
                 FullscreenButton_Click;
@@ -618,71 +727,192 @@ namespace VideoPlayer
 
 
             // =====================================================
-            // 40 SANİYE UYARISI
+            // INTRO ATLA
+            // =====================================================
+
+            _skipIntroButton =
+                CreateButton(
+                    "⏩ INTRO'YU ATLA");
+
+            _skipIntroButton.Width =
+                190;
+
+            _skipIntroButton.Height =
+                45;
+
+            _skipIntroButton.Visible =
+                false;
+
+            _skipIntroButton.BackColor =
+                Color.FromArgb(
+                    210,
+                    210,
+                    210);
+
+            _skipIntroButton.ForeColor =
+                Color.Black;
+
+            _skipIntroButton.Font =
+                new Font(
+                    "Segoe UI",
+                    11,
+                    FontStyle.Bold);
+
+            _skipIntroButton.Anchor =
+                AnchorStyles.Bottom |
+                AnchorStyles.Right;
+
+            _skipIntroButton.Location =
+                new Point(
+                    ClientSize.Width -
+                    610,
+                    ClientSize.Height -
+                    170);
+
+            _skipIntroButton.Click +=
+                SkipIntroButton_Click;
+
+            Controls.Add(
+                _skipIntroButton);
+
+
+            // =====================================================
+            // SONRAKİ BÖLÜM PANELİ
             // =====================================================
 
             _notificationPanel =
                 new Panel();
 
             _notificationPanel.Width =
-                500;
+                350;
 
             _notificationPanel.Height =
-                135;
+                180;
 
             _notificationPanel.BackColor =
                 Color.FromArgb(
-                    225,
-                    10,
-                    10,
-                    13);
+                    235,
+                    12,
+                    12,
+                    15);
 
             _notificationPanel.Visible =
                 false;
+
+            _notificationPanel.Anchor =
+                AnchorStyles.Bottom |
+                AnchorStyles.Right;
 
             Controls.Add(
                 _notificationPanel);
 
 
-            _notificationLabel =
+            _notificationTitle =
                 new Label();
 
-            _notificationLabel.Dock =
-                DockStyle.Fill;
+            _notificationTitle.Text =
+                "SONRAKİ BÖLÜM";
 
-            _notificationLabel.Text =
-                "İYİ SEYİRLER OLCAY KILIÇ ❤️\n\n" +
-                "Sonraki bölüme geçiliyor...";
-
-            _notificationLabel.ForeColor =
+            _notificationTitle.ForeColor =
                 Color.White;
 
-            _notificationLabel.BackColor =
-                Color.Transparent;
-
-            _notificationLabel.TextAlign =
-                ContentAlignment.MiddleCenter;
-
-            _notificationLabel.Font =
+            _notificationTitle.Font =
                 new Font(
                     "Segoe UI",
-                    17,
+                    11,
                     FontStyle.Bold);
 
+            _notificationTitle.AutoSize =
+                true;
+
+            _notificationTitle.Location =
+                new Point(
+                    20,
+                    15);
+
             _notificationPanel.Controls.Add(
-                _notificationLabel);
+                _notificationTitle);
 
-            _notificationPanel.BringToFront();
 
-            CenterNotification();
+            _notificationEpisode =
+                new Label();
 
-            Resize +=
-                MainForm_Resize;
+            _notificationEpisode.Text =
+                "Bölüm 2";
+
+            _notificationEpisode.ForeColor =
+                Color.White;
+
+            _notificationEpisode.Font =
+                new Font(
+                    "Segoe UI",
+                    16,
+                    FontStyle.Bold);
+
+            _notificationEpisode.AutoSize =
+                true;
+
+            _notificationEpisode.Location =
+                new Point(
+                    20,
+                    45);
+
+            _notificationPanel.Controls.Add(
+                _notificationEpisode);
+
+
+            _notificationCountdown =
+                new Label();
+
+            _notificationCountdown.Text =
+                "10";
+
+            _notificationCountdown.ForeColor =
+                Color.White;
+
+            _notificationCountdown.Font =
+                new Font(
+                    "Segoe UI",
+                    30,
+                    FontStyle.Bold);
+
+            _notificationCountdown.AutoSize =
+                true;
+
+            _notificationCountdown.Location =
+                new Point(
+                    250,
+                    38);
+
+            _notificationPanel.Controls.Add(
+                _notificationCountdown);
+
+
+            _notificationPlayButton =
+                CreateButton(
+                    "ŞİMDİ İZLE");
+
+            _notificationPlayButton.Width =
+                310;
+
+            _notificationPlayButton.Height =
+                45;
+
+            _notificationPlayButton.Location =
+                new Point(
+                    20,
+                    115);
+
+            _notificationPlayButton.Click +=
+                NotificationPlayButton_Click;
+
+            _notificationPanel.Controls.Add(
+                _notificationPlayButton);
         }
 
 
         // =========================================================
-        // BUTTON
+        // BUTON OLUŞTUR
         // =========================================================
 
         private Button CreateButton(
@@ -715,40 +945,10 @@ namespace VideoPlayer
                     9,
                     FontStyle.Bold);
 
-            button.Height =
-                34;
-
             button.Cursor =
                 Cursors.Hand;
 
             return button;
-        }
-
-
-        // =========================================================
-        // BİLDİRİM ORTALA
-        // =========================================================
-
-        private void CenterNotification()
-        {
-            if (_notificationPanel == null)
-                return;
-
-            _notificationPanel.Left =
-                (ClientSize.Width -
-                 _notificationPanel.Width) / 2;
-
-            _notificationPanel.Top =
-                (ClientSize.Height -
-                 _notificationPanel.Height) / 2;
-        }
-
-
-        private void MainForm_Resize(
-            object? sender,
-            EventArgs e)
-        {
-            CenterNotification();
         }
 
 
@@ -763,10 +963,7 @@ namespace VideoPlayer
             if (_videos.Count >= 20)
             {
                 MessageBox.Show(
-                    "En fazla 20 video ekleyebilirsin.",
-                    "Video Limiti",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                    "En fazla 20 video ekleyebilirsin.");
 
                 return;
             }
@@ -775,10 +972,12 @@ namespace VideoPlayer
                 new OpenFileDialog();
 
             dialog.Title =
-                "Video Seç";
+                "Videoları Seç";
 
             dialog.Filter =
-                "Video Dosyaları|*.mp4;*.mkv;*.avi;*.mov;*.wmv;*.webm|Tüm Dosyalar|*.*";
+                "Video Dosyaları|" +
+                "*.mp4;*.mkv;*.avi;*.mov;*.wmv;*.webm|" +
+                "Tüm Dosyalar|*.*";
 
             dialog.Multiselect =
                 true;
@@ -789,21 +988,35 @@ namespace VideoPlayer
                 return;
             }
 
-            foreach (string file
+            foreach (
+                string file
                 in dialog.FileNames)
             {
                 if (_videos.Count >= 20)
                     break;
 
-                if (!_videos.Contains(file))
+                if (_videos.Exists(
+                    x => x.FilePath == file))
                 {
-                    _videos.Add(file);
-
-                    _playlist.Items.Add(
-                        $"{_videos.Count}.  " +
-                        Path.GetFileName(file));
+                    continue;
                 }
+
+                VideoItem item =
+                    new VideoItem();
+
+                item.FilePath =
+                    file;
+
+                item.IntroStart =
+                    0;
+
+                item.IntroEnd =
+                    0;
+
+                _videos.Add(item);
             }
+
+            RefreshVideoSlots();
 
             _emptyLabel.Visible =
                 _videos.Count == 0;
@@ -817,154 +1030,440 @@ namespace VideoPlayer
 
 
         // =========================================================
-        // SİL
+        // SLOT'LARI OLUŞTUR
         // =========================================================
 
-        private void RemoveButton_Click(
-            object? sender,
-            EventArgs e)
+        private void RefreshVideoSlots()
         {
-            int index =
-                _playlist.SelectedIndex;
+            Control[] controls =
+                _sideBar.Controls
+                    .Find(
+                        "VideoList",
+                        true);
 
-            if (index < 0 ||
-                index >= _videos.Count)
-            {
+            if (controls.Length == 0)
                 return;
-            }
 
-            _videos.RemoveAt(index);
+            FlowLayoutPanel videoList =
+                controls[0]
+                as FlowLayoutPanel!;
 
-            RefreshPlaylist();
+            videoList.Controls.Clear();
 
-            if (_videos.Count == 0)
+            for (
+                int i = 0;
+                i < _videos.Count;
+                i++)
             {
-                _currentIndex = -1;
-
-                _mediaPlayer.Stop();
-
-                _titleLabel.Text =
-                    "OLCAY KILIÇ VIDEO PLAYER";
-
-                _emptyLabel.Visible =
-                    true;
-
-                return;
+                CreateVideoSlot(
+                    videoList,
+                    i);
             }
-
-            if (_currentIndex >=
-                _videos.Count)
-            {
-                _currentIndex =
-                    _videos.Count - 1;
-            }
-
-            PlayVideo(
-                _currentIndex);
         }
 
 
         // =========================================================
-        // YUKARI
+        // VIDEO SLOT
         // =========================================================
 
-        private void UpButton_Click(
-            object? sender,
-            EventArgs e)
+        private void CreateVideoSlot(
+            FlowLayoutPanel parent,
+            int index)
         {
-            int index =
-                _playlist.SelectedIndex;
-
-            if (index <= 0)
-                return;
-
-            string temp =
+            VideoItem item =
                 _videos[index];
 
-            _videos[index] =
-                _videos[index - 1];
+            Panel slot =
+                new Panel();
 
-            _videos[index - 1] =
-                temp;
+            slot.Width =
+                350;
 
-            RefreshPlaylist();
+            slot.Height =
+                175;
 
-            _playlist.SelectedIndex =
-                index - 1;
+            slot.BackColor =
+                Color.FromArgb(
+                    27,
+                    27,
+                    32);
+
+            slot.Margin =
+                new Padding(
+                    10,
+                    6,
+                    10,
+                    6);
+
+            // -----------------------------------------------------
+            // BÖLÜM NUMARASI
+            // -----------------------------------------------------
+
+            Label number =
+                new Label();
+
+            number.Text =
+                $"{index + 1}";
+
+            number.ForeColor =
+                Color.White;
+
+            number.Font =
+                new Font(
+                    "Segoe UI",
+                    12,
+                    FontStyle.Bold);
+
+            number.Location =
+                new Point(
+                    12,
+                    10);
+
+            number.AutoSize =
+                true;
+
+            slot.Controls.Add(
+                number);
+
+
+            // -----------------------------------------------------
+            // DOSYA ADI
+            // -----------------------------------------------------
+
+            Label name =
+                new Label();
+
+            name.Text =
+                item.Title;
+
+            name.ForeColor =
+                Color.White;
+
+            name.Font =
+                new Font(
+                    "Segoe UI",
+                    10,
+                    FontStyle.Bold);
+
+            name.Location =
+                new Point(
+                    45,
+                    12);
+
+            name.Width =
+                285;
+
+            name.AutoEllipsis =
+                true;
+
+            slot.Controls.Add(
+                name);
+
+
+            // -----------------------------------------------------
+            // INTRO BAŞLANGIÇ
+            // -----------------------------------------------------
+
+            Label startLabel =
+                new Label();
+
+            startLabel.Text =
+                "Intro Başlangıç";
+
+            startLabel.ForeColor =
+                Color.LightGray;
+
+            startLabel.Location =
+                new Point(
+                    15,
+                    48);
+
+            startLabel.AutoSize =
+                true;
+
+            slot.Controls.Add(
+                startLabel);
+
+
+            TextBox startBox =
+                new TextBox();
+
+            startBox.Text =
+                FormatSeconds(
+                    item.IntroStart);
+
+            startBox.Location =
+                new Point(
+                    145,
+                    44);
+
+            startBox.Width =
+                85;
+
+            startBox.BackColor =
+                Color.FromArgb(
+                    40,
+                    40,
+                    45);
+
+            startBox.ForeColor =
+                Color.White;
+
+            slot.Controls.Add(
+                startBox);
+
+
+            // -----------------------------------------------------
+            // INTRO BİTİŞ
+            // -----------------------------------------------------
+
+            Label endLabel =
+                new Label();
+
+            endLabel.Text =
+                "Intro Bitiş";
+
+            endLabel.ForeColor =
+                Color.LightGray;
+
+            endLabel.Location =
+                new Point(
+                    15,
+                    83);
+
+            endLabel.AutoSize =
+                true;
+
+            slot.Controls.Add(
+                endLabel);
+
+
+            TextBox endBox =
+                new TextBox();
+
+            endBox.Text =
+                FormatSeconds(
+                    item.IntroEnd);
+
+            endBox.Location =
+                new Point(
+                    145,
+                    79);
+
+            endBox.Width =
+                85;
+
+            endBox.BackColor =
+                Color.FromArgb(
+                    40,
+                    40,
+                    45);
+
+            endBox.ForeColor =
+                Color.White;
+
+            slot.Controls.Add(
+                endBox);
+
+
+            // -----------------------------------------------------
+            // KAYDET
+            // -----------------------------------------------------
+
+            Button saveButton =
+                CreateButton(
+                    "KAYDET");
+
+            saveButton.Location =
+                new Point(
+                    240,
+                    48);
+
+            saveButton.Width =
+                90;
+
+            saveButton.Height =
+                65;
+
+            saveButton.Click +=
+                (s, e) =>
+                {
+                    int start =
+                        ParseTime(
+                            startBox.Text);
+
+                    int end =
+                        ParseTime(
+                            endBox.Text);
+
+                    if (start < 0)
+                        start = 0;
+
+                    if (end < 0)
+                        end = 0;
+
+                    if (end > 0 &&
+                        end <= start)
+                    {
+                        MessageBox.Show(
+                            "Intro bitiş zamanı, " +
+                            "başlangıç zamanından büyük olmalı.");
+
+                        return;
+                    }
+
+                    item.IntroStart =
+                        start;
+
+                    item.IntroEnd =
+                        end;
+
+                    saveButton.Text =
+                        "✓ KAYDEDİLDİ";
+
+                    System.Windows.Forms.Timer timer =
+                        new System.Windows.Forms.Timer();
+
+                    timer.Interval =
+                        1200;
+
+                    timer.Tick +=
+                        (ts, te) =>
+                        {
+                            saveButton.Text =
+                                "KAYDET";
+
+                            timer.Stop();
+
+                            timer.Dispose();
+                        };
+
+                    timer.Start();
+                };
+
+            slot.Controls.Add(
+                saveButton);
+
+
+            // -----------------------------------------------------
+            // OYNAT
+            // -----------------------------------------------------
+
+            Button playButton =
+                CreateButton(
+                    "▶ OYNAT");
+
+            playButton.Location =
+                new Point(
+                    15,
+                    125);
+
+            playButton.Width =
+                315;
+
+            playButton.Height =
+                35;
+
+            playButton.Click +=
+                (s, e) =>
+                {
+                    PlayVideo(index);
+                };
+
+            slot.Controls.Add(
+                playButton);
+
+
+            parent.Controls.Add(
+                slot);
         }
 
 
         // =========================================================
-        // AŞAĞI
+        // ZAMAN FORMAT
         // =========================================================
 
-        private void DownButton_Click(
-            object? sender,
-            EventArgs e)
+        private string FormatSeconds(
+            int seconds)
         {
-            int index =
-                _playlist.SelectedIndex;
+            TimeSpan t =
+                TimeSpan.FromSeconds(
+                    seconds);
 
-            if (index < 0 ||
-                index >= _videos.Count - 1)
+            if (t.TotalHours >= 1)
             {
-                return;
+                return t.ToString(
+                    @"hh\:mm\:ss");
             }
 
-            string temp =
-                _videos[index];
-
-            _videos[index] =
-                _videos[index + 1];
-
-            _videos[index + 1] =
-                temp;
-
-            RefreshPlaylist();
-
-            _playlist.SelectedIndex =
-                index + 1;
+            return t.ToString(
+                @"mm\:ss");
         }
 
 
         // =========================================================
-        // PLAYLIST YENİLE
+        // ZAMAN OKU
         // =========================================================
 
-        private void RefreshPlaylist()
+        private int ParseTime(
+            string text)
         {
-            _playlist.Items.Clear();
+            text =
+                text.Trim();
 
-            for (int i = 0;
-                 i < _videos.Count;
-                 i++)
+            if (string.IsNullOrWhiteSpace(
+                text))
             {
-                _playlist.Items.Add(
-                    $"{i + 1}.  " +
-                    Path.GetFileName(
-                        _videos[i]));
+                return 0;
             }
-        }
 
-
-        // =========================================================
-        // PLAYLIST SEÇ
-        // =========================================================
-
-        private void Playlist_SelectedIndexChanged(
-            object? sender,
-            EventArgs e)
-        {
-            int index =
-                _playlist.SelectedIndex;
-
-            if (index < 0)
-                return;
-
-            if (index != _currentIndex)
+            if (int.TryParse(
+                text,
+                out int plainSeconds))
             {
-                PlayVideo(index);
+                return plainSeconds;
             }
+
+            string[] parts =
+                text.Split(':');
+
+            try
+            {
+                if (parts.Length == 2)
+                {
+                    int minutes =
+                        int.Parse(parts[0]);
+
+                    int seconds =
+                        int.Parse(parts[1]);
+
+                    return
+                        minutes * 60 +
+                        seconds;
+                }
+
+                if (parts.Length == 3)
+                {
+                    int hours =
+                        int.Parse(parts[0]);
+
+                    int minutes =
+                        int.Parse(parts[1]);
+
+                    int seconds =
+                        int.Parse(parts[2]);
+
+                    return
+                        hours * 3600 +
+                        minutes * 60 +
+                        seconds;
+                }
+            }
+            catch
+            {
+            }
+
+            return 0;
         }
 
 
@@ -981,14 +1480,15 @@ namespace VideoPlayer
                 return;
             }
 
-            string file =
+            VideoItem item =
                 _videos[index];
 
-            if (!File.Exists(file))
+            if (!File.Exists(
+                item.FilePath))
             {
                 MessageBox.Show(
-                    "Video dosyası bulunamadı:\n\n" +
-                    file);
+                    "Video bulunamadı:\n\n" +
+                    item.FilePath);
 
                 return;
             }
@@ -996,12 +1496,16 @@ namespace VideoPlayer
             _currentIndex =
                 index;
 
-            // YENİ VİDEO BAŞLADIĞINDA
-            // 40 saniyelik uyarıyı sıfırla.
             _noticeShown =
                 false;
 
+            _nextCountdown =
+                10;
+
             _notificationPanel.Visible =
+                false;
+
+            _skipIntroButton.Visible =
                 false;
 
             try
@@ -1011,16 +1515,14 @@ namespace VideoPlayer
                 using Media media =
                     new Media(
                         _libVLC,
-                        new Uri(file));
+                        new Uri(
+                            item.FilePath));
 
                 _mediaPlayer.Play(
                     media);
 
                 _titleLabel.Text =
-                    Path.GetFileName(file);
-
-                _playlist.SelectedIndex =
-                    index;
+                    item.Title;
 
                 _emptyLabel.Visible =
                     false;
@@ -1032,16 +1534,282 @@ namespace VideoPlayer
             {
                 MessageBox.Show(
                     "Video açılırken hata oluştu:\n\n" +
-                    ex.Message,
-                    "Hata",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                    ex.Message);
             }
         }
 
 
         // =========================================================
-        // PLAY / PAUSE
+        // INTRO KONTROL
+        // =========================================================
+
+        private void CheckIntro(
+            long currentTime)
+        {
+            if (_currentIndex < 0 ||
+                _currentIndex >=
+                _videos.Count)
+            {
+                return;
+            }
+
+            VideoItem item =
+                _videos[_currentIndex];
+
+            if (item.IntroStart <= 0 ||
+                item.IntroEnd <=
+                item.IntroStart)
+            {
+                _skipIntroButton.Visible =
+                    false;
+
+                return;
+            }
+
+            bool insideIntro =
+                currentTime >=
+                item.IntroStart * 1000L
+                &&
+                currentTime <
+                item.IntroEnd * 1000L;
+
+            if (insideIntro)
+            {
+                _skipIntroButton.Visible =
+                    true;
+
+                _skipIntroButton.BringToFront();
+            }
+            else
+            {
+                _skipIntroButton.Visible =
+                    false;
+            }
+        }
+
+
+        // =========================================================
+        // INTRO ATLA
+        // =========================================================
+
+        private void SkipIntroButton_Click(
+            object? sender,
+            EventArgs e)
+        {
+            if (_currentIndex < 0 ||
+                _currentIndex >=
+                _videos.Count)
+            {
+                return;
+            }
+
+            VideoItem item =
+                _videos[_currentIndex];
+
+            if (item.IntroEnd <= 0)
+                return;
+
+            _mediaPlayer.Time =
+                item.IntroEnd * 1000L;
+
+            _skipIntroButton.Visible =
+                false;
+        }
+
+
+        // =========================================================
+        // TIMER
+        // =========================================================
+
+        private void UpdateTimer_Tick(
+            object? sender,
+            EventArgs e)
+        {
+            if (_mediaPlayer == null)
+                return;
+
+            long time =
+                _mediaPlayer.Time;
+
+            long length =
+                _mediaPlayer.Length;
+
+            if (length <= 0)
+                return;
+
+            // PROGRESS
+            double percent =
+                (double)time /
+                length;
+
+            if (percent < 0)
+                percent = 0;
+
+            if (percent > 1)
+                percent = 1;
+
+            int value =
+                (int)(
+                    percent *
+                    _progressBar.Maximum);
+
+            if (value >=
+                _progressBar.Minimum &&
+                value <=
+                _progressBar.Maximum)
+            {
+                _progressBar.Value =
+                    value;
+            }
+
+
+            // SÜRE
+            _timeLabel.Text =
+                FormatMilliseconds(
+                    time)
+                +
+                " / "
+                +
+                FormatMilliseconds(
+                    length);
+
+
+            // INTRO
+            CheckIntro(
+                time);
+
+
+            // =====================================================
+            // SON 10 SANİYE
+            // =====================================================
+
+            long remaining =
+                length - time;
+
+            if (remaining <= 10000 &&
+                remaining > 0)
+            {
+                if (!_noticeShown)
+                {
+                    ShowNextEpisodeNotice();
+                }
+
+                int countdown =
+                    (int)Math.Ceiling(
+                        remaining /
+                        1000.0);
+
+                if (countdown < 1)
+                    countdown = 1;
+
+                _nextCountdown =
+                    countdown;
+
+                _notificationCountdown.Text =
+                    countdown.ToString();
+            }
+
+
+            _playButton.Text =
+                _mediaPlayer.IsPlaying
+                    ? "⏸"
+                    : "▶";
+        }
+
+
+        // =========================================================
+        // SONRAKİ BÖLÜM UYARISI
+        // =========================================================
+
+        private void ShowNextEpisodeNotice()
+        {
+            _noticeShown =
+                true;
+
+            int next =
+                _currentIndex + 1;
+
+            if (next >= _videos.Count)
+            {
+                next = 0;
+            }
+
+            if (_videos.Count == 1)
+            {
+                _notificationEpisode.Text =
+                    "Video yeniden başlayacak";
+            }
+            else
+            {
+                _notificationEpisode.Text =
+                    "Bölüm " +
+                    (next + 1) +
+                    " • " +
+                    _videos[next].Title;
+            }
+
+            _notificationCountdown.Text =
+                "10";
+
+            _notificationPanel.Visible =
+                true;
+
+            _notificationPanel.BringToFront();
+        }
+
+
+        // =========================================================
+        // ŞİMDİ İZLE
+        // =========================================================
+
+        private void NotificationPlayButton_Click(
+            object? sender,
+            EventArgs e)
+        {
+            PlayNextVideo();
+        }
+
+
+        // =========================================================
+        // VIDEO BİTTİ
+        // =========================================================
+
+        private void MediaPlayer_EndReached(
+            object? sender,
+            EventArgs e)
+        {
+            BeginInvoke(
+                new Action(
+                    () =>
+                    {
+                        PlayNextVideo();
+                    }));
+        }
+
+
+        // =========================================================
+        // SONRAKİ VIDEO
+        // =========================================================
+
+        private void PlayNextVideo()
+        {
+            if (_videos.Count == 0)
+                return;
+
+            int next =
+                _currentIndex + 1;
+
+            if (next >= _videos.Count)
+            {
+                next = 0;
+            }
+
+            PlayVideo(next);
+        }
+
+
+        // =========================================================
+        // PLAY
         // =========================================================
 
         private void PlayButton_Click(
@@ -1051,9 +1819,7 @@ namespace VideoPlayer
             if (_currentIndex == -1)
             {
                 if (_videos.Count > 0)
-                {
                     PlayVideo(0);
-                }
 
                 return;
             }
@@ -1109,185 +1875,6 @@ namespace VideoPlayer
 
 
         // =========================================================
-        // VIDEO BİTTİ
-        // =========================================================
-
-        private void MediaPlayer_EndReached(
-            object? sender,
-            EventArgs e)
-        {
-            BeginInvoke(
-                new Action(() =>
-                {
-                    PlayNextVideo();
-                }));
-        }
-
-
-        // =========================================================
-        // SONRAKİ VİDEO
-        // =========================================================
-
-        private void PlayNextVideo()
-        {
-            if (_videos.Count == 0)
-                return;
-
-            int next =
-                _currentIndex + 1;
-
-            if (next >= _videos.Count)
-            {
-                next = 0;
-            }
-
-            PlayVideo(next);
-        }
-
-
-        // =========================================================
-        // TIMER
-        // =========================================================
-
-        private void UpdateTimer_Tick(
-            object? sender,
-            EventArgs e)
-        {
-            if (_mediaPlayer == null)
-                return;
-
-            long time =
-                _mediaPlayer.Time;
-
-            long length =
-                _mediaPlayer.Length;
-
-            if (length <= 0)
-                return;
-
-            double percent =
-                (double)time /
-                length;
-
-            if (percent < 0)
-                percent = 0;
-
-            if (percent > 1)
-                percent = 1;
-
-            int value =
-                (int)(
-                    percent *
-                    _progressBar.Maximum);
-
-            if (value >=
-                _progressBar.Minimum &&
-                value <=
-                _progressBar.Maximum)
-            {
-                _progressBar.Value =
-                    value;
-            }
-
-            _timeLabel.Text =
-                FormatTime(time) +
-                " / " +
-                FormatTime(length);
-
-
-            // =====================================================
-            // SON 40 SANİYE
-            // =====================================================
-
-            long remaining =
-                length - time;
-
-            if (remaining <= 40000 &&
-                remaining > 0 &&
-                !_noticeShown)
-            {
-                _noticeShown =
-                    true;
-
-                _notificationLabel.Text =
-                    "İYİ SEYİRLER OLCAY KILIÇ ❤️\n\n" +
-                    "Sonraki bölüme geçiliyor...";
-
-                _notificationPanel.Visible =
-                    true;
-
-                CenterNotification();
-
-                _notificationPanel.BringToFront();
-            }
-
-            _playButton.Text =
-                _mediaPlayer.IsPlaying
-                    ? "⏸"
-                    : "▶";
-        }
-
-
-        // =========================================================
-        // SÜRE
-        // =========================================================
-
-        private string FormatTime(
-            long milliseconds)
-        {
-            if (milliseconds < 0)
-                milliseconds = 0;
-
-            TimeSpan time =
-                TimeSpan.FromMilliseconds(
-                    milliseconds);
-
-            if (time.TotalHours >= 1)
-            {
-                return time.ToString(
-                    @"hh\:mm\:ss");
-            }
-
-            return time.ToString(
-                @"mm\:ss");
-        }
-
-
-        // =========================================================
-        // SEEK
-        // =========================================================
-
-        private void ProgressBar_MouseDown(
-            object? sender,
-            MouseEventArgs e)
-        {
-            if (_mediaPlayer.Length <= 0)
-                return;
-
-            TrackBar bar =
-                (TrackBar)sender!;
-
-            double percent =
-                (double)e.X /
-                bar.Width;
-
-            if (percent < 0)
-                percent = 0;
-
-            if (percent > 1)
-                percent = 1;
-
-            long position =
-                (long)(
-                    _mediaPlayer.Length *
-                    percent);
-
-            _mediaPlayer.Time =
-                position;
-        }
-
-
-        // =========================================================
         // SES
         // =========================================================
 
@@ -1311,10 +1898,6 @@ namespace VideoPlayer
         }
 
 
-        // =========================================================
-        // MUTE
-        // =========================================================
-
         private void MuteButton_Click(
             object? sender,
             EventArgs e)
@@ -1326,6 +1909,170 @@ namespace VideoPlayer
                 _mediaPlayer.Mute
                     ? "🔇"
                     : "🔊";
+        }
+
+
+        // =========================================================
+        // PROGRESS
+        // =========================================================
+
+        private void ProgressBar_MouseDown(
+            object? sender,
+            MouseEventArgs e)
+        {
+            if (_mediaPlayer.Length <= 0)
+                return;
+
+            TrackBar bar =
+                (TrackBar)sender!;
+
+            double percent =
+                (double)e.X /
+                bar.Width;
+
+            if (percent < 0)
+                percent = 0;
+
+            if (percent > 1)
+                percent = 1;
+
+            _mediaPlayer.Time =
+                (long)(
+                    _mediaPlayer.Length *
+                    percent);
+        }
+
+
+        // =========================================================
+        // FORMAT
+        // =========================================================
+
+        private string FormatMilliseconds(
+            long milliseconds)
+        {
+            if (milliseconds < 0)
+                milliseconds = 0;
+
+            TimeSpan time =
+                TimeSpan.FromMilliseconds(
+                    milliseconds);
+
+            if (time.TotalHours >= 1)
+            {
+                return time.ToString(
+                    @"hh\:mm\:ss");
+            }
+
+            return time.ToString(
+                @"mm\:ss");
+        }
+
+
+        // =========================================================
+        // SİL
+        // =========================================================
+
+        private void RemoveButton_Click(
+            object? sender,
+            EventArgs e)
+        {
+            if (_videos.Count == 0)
+                return;
+
+            if (_currentIndex < 0 ||
+                _currentIndex >=
+                _videos.Count)
+            {
+                return;
+            }
+
+            _videos.RemoveAt(
+                _currentIndex);
+
+            if (_videos.Count == 0)
+            {
+                _currentIndex = -1;
+
+                _mediaPlayer.Stop();
+
+                _titleLabel.Text =
+                    "OLCAY KILIÇ TV";
+
+                _emptyLabel.Visible =
+                    true;
+
+                RefreshVideoSlots();
+
+                return;
+            }
+
+            if (_currentIndex >=
+                _videos.Count)
+            {
+                _currentIndex =
+                    _videos.Count - 1;
+            }
+
+            RefreshVideoSlots();
+
+            PlayVideo(
+                _currentIndex);
+        }
+
+
+        // =========================================================
+        // YUKARI
+        // =========================================================
+
+        private void UpButton_Click(
+            object? sender,
+            EventArgs e)
+        {
+            if (_currentIndex <= 0)
+                return;
+
+            VideoItem temp =
+                _videos[_currentIndex];
+
+            _videos[_currentIndex] =
+                _videos[_currentIndex - 1];
+
+            _videos[_currentIndex - 1] =
+                temp;
+
+            _currentIndex--;
+
+            RefreshVideoSlots();
+        }
+
+
+        // =========================================================
+        // AŞAĞI
+        // =========================================================
+
+        private void DownButton_Click(
+            object? sender,
+            EventArgs e)
+        {
+            if (_currentIndex < 0 ||
+                _currentIndex >=
+                _videos.Count - 1)
+            {
+                return;
+            }
+
+            VideoItem temp =
+                _videos[_currentIndex];
+
+            _videos[_currentIndex] =
+                _videos[_currentIndex + 1];
+
+            _videos[_currentIndex + 1] =
+                temp;
+
+            _currentIndex++;
+
+            RefreshVideoSlots();
         }
 
 
@@ -1372,26 +2119,16 @@ namespace VideoPlayer
                 _bottomBar.Visible =
                     false;
 
-                Cursor.Hide();
-
-                _controlsHidden =
-                    true;
+                _skipIntroButton.BringToFront();
 
                 if (_notificationPanel.Visible)
                 {
                     _notificationPanel.BringToFront();
-
-                    CenterNotification();
                 }
             }
             else
             {
                 _isFullscreen =
-                    false;
-
-                Cursor.Show();
-
-                _controlsHidden =
                     false;
 
                 FormBorderStyle =
@@ -1412,9 +2149,55 @@ namespace VideoPlayer
                 _bottomBar.Visible =
                     true;
 
+                if (_skipIntroButton.Visible)
+                {
+                    _skipIntroButton.BringToFront();
+                }
+
                 if (_notificationPanel.Visible)
                 {
                     _notificationPanel.BringToFront();
+                }
+            }
+        }
+
+
+        // =========================================================
+        // MOUSE
+        // =========================================================
+
+        private void MainForm_MouseMove(
+            object? sender,
+            MouseEventArgs e)
+        {
+            _lastMouseMove =
+                DateTime.Now;
+
+            if (!_isFullscreen)
+                return;
+
+            _bottomBar.Visible =
+                true;
+        }
+
+
+        private void MouseTimer_Tick(
+            object? sender,
+            EventArgs e)
+        {
+            if (!_isFullscreen)
+                return;
+
+            TimeSpan idle =
+                DateTime.Now -
+                _lastMouseMove;
+
+            if (idle.TotalSeconds >= 2)
+            {
+                if (!_notificationPanel.Visible)
+                {
+                    _bottomBar.Visible =
+                        false;
                 }
             }
         }
@@ -1428,7 +2211,8 @@ namespace VideoPlayer
             object? sender,
             KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.F11)
+            if (e.KeyCode ==
+                Keys.F11)
             {
                 ToggleFullscreen();
 
@@ -1438,7 +2222,8 @@ namespace VideoPlayer
                 return;
             }
 
-            if (e.KeyCode == Keys.Escape &&
+            if (e.KeyCode ==
+                Keys.Escape &&
                 _isFullscreen)
             {
                 ToggleFullscreen();
@@ -1449,7 +2234,8 @@ namespace VideoPlayer
                 return;
             }
 
-            if (e.KeyCode == Keys.Space)
+            if (e.KeyCode ==
+                Keys.Space)
             {
                 PlayButton_Click(
                     null,
@@ -1461,13 +2247,11 @@ namespace VideoPlayer
                 return;
             }
 
-            if (e.KeyCode == Keys.Right)
+            if (e.KeyCode ==
+                Keys.Right)
             {
-                if (_mediaPlayer.Length > 0)
-                {
-                    _mediaPlayer.Time +=
-                        10000;
-                }
+                _mediaPlayer.Time +=
+                    10000;
 
                 e.SuppressKeyPress =
                     true;
@@ -1475,13 +2259,11 @@ namespace VideoPlayer
                 return;
             }
 
-            if (e.KeyCode == Keys.Left)
+            if (e.KeyCode ==
+                Keys.Left)
             {
-                if (_mediaPlayer.Length > 0)
-                {
-                    _mediaPlayer.Time -=
-                        10000;
-                }
+                _mediaPlayer.Time -=
+                    10000;
 
                 e.SuppressKeyPress =
                     true;
@@ -1490,82 +2272,22 @@ namespace VideoPlayer
 
 
         // =========================================================
-        // MOUSE
+        // RESIZE
         // =========================================================
 
-        private void MainForm_MouseMove(
-            object? sender,
-            MouseEventArgs e)
-        {
-            if (!_isFullscreen)
-                return;
-
-            Cursor.Show();
-
-            _controlsHidden =
-                false;
-
-            _lastMousePosition =
-                Cursor.Position;
-
-            if (!_notificationPanel.Visible)
-            {
-                _bottomBar.Visible =
-                    true;
-            }
-        }
-
-
-        private void MouseTimer_Tick(
+        private void MainForm_Resize(
             object? sender,
             EventArgs e)
         {
-            if (!_isFullscreen)
-                return;
-
-            Point current =
-                Cursor.Position;
-
-            if (current !=
-                _lastMousePosition)
+            if (_skipIntroButton != null)
             {
-                _lastMousePosition =
-                    current;
-
-                Cursor.Show();
-
-                _controlsHidden =
-                    false;
-
-                if (!_notificationPanel.Visible)
-                {
-                    _bottomBar.Visible =
-                        true;
-                }
-
-                return;
+                _skipIntroButton.Location =
+                    new Point(
+                        ClientSize.Width -
+                        610,
+                        ClientSize.Height -
+                        170);
             }
-
-            if (_notificationPanel.Visible)
-            {
-                Cursor.Hide();
-
-                _bottomBar.Visible =
-                    false;
-
-                _controlsHidden =
-                    true;
-
-                return;
-            }
-
-            Cursor.Hide();
-
-            _bottomBar.Visible =
-                false;
-
-            _controlsHidden =
-                true;
         }
 
 
